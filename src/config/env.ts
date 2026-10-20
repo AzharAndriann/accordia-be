@@ -11,7 +11,7 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
   TRUST_PROXY: z.enum(['false', 'loopback']).default('false'),
-  UPLOAD_DIR: z.string().min(1).default('./storage/private-uploads'),
+  UPLOAD_DIR: z.string().min(1).default('./var/private-uploads'),
   API_DOCS_ENABLED: z.enum(['true', 'false']).default('false'),
   CORS_ORIGINS: z.string().default(''),
 });

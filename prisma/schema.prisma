@@ -22,6 +22,7 @@ model User {
   rejectedAgreementVersions AgreementVersion[] @relation("AgreementRejector")
   agreementApprovals       AgreementApproval[]
   changeRequests           ChangeRequest[] @relation("ChangeRequester")
+  uploadedFiles            File[] @relation("FileUploader")
 }
 
 enum ProjectStatus {
@@ -52,6 +53,7 @@ model Project {
   agreementVersions        AgreementVersion[] @relation("ProjectAgreementVersions")
   activeAgreementVersion   AgreementVersion?  @relation("ActiveAgreementVersion", fields: [activeAgreementVersionId], references: [id], onDelete: SetNull)
   changeRequests           ChangeRequest[]
+  files                    File[]
 
   @@index([creatorId])
   @@index([createdAt, id])
@@ -150,6 +152,29 @@ model ChangeRequest {
 
   @@index([projectId, createdAt, id])
   @@index([requestedById])
+}
+
+enum FileStatus {
+  READY
+  FAILED
+}
+
+model File {
+  id           String     @id @default(uuid()) @db.Uuid
+  projectId    String     @db.Uuid
+  uploaderId   String     @db.Uuid
+  storageKey   String     @unique @db.VarChar(100)
+  originalName String     @db.VarChar(255)
+  mimeType     String     @db.VarChar(50)
+  size         Int
+  checksum     String     @db.Char(64)
+  status       FileStatus @default(READY)
+  createdAt    DateTime   @default(now())
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader     User       @relation("FileUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([uploaderId])
 }
 
 model AgreementApproval {

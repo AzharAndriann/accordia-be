@@ -30,6 +30,8 @@ describe('system endpoints', () => {
       '/agreement-versions/{versionId}/approve',
       '/agreement-versions/{versionId}/reject',
       '/projects/{projectId}/change-requests',
+      '/projects/{projectId}/files',
+      '/files/{fileId}/download',
     ]);
   });
 

@@ -277,6 +277,22 @@ const changeRequestResponse = {
   },
 };
 
+const fileResponse = {
+  type: 'object',
+  required: ['id', 'projectId', 'uploaderId', 'originalName', 'mimeType', 'size', 'checksum', 'status', 'createdAt'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    projectId: { type: 'string', format: 'uuid' },
+    uploaderId: { type: 'string', format: 'uuid' },
+    originalName: { type: 'string' },
+    mimeType: { type: 'string', enum: ['application/pdf', 'image/jpeg', 'image/png'] },
+    size: { type: 'integer', minimum: 1, maximum: 10_485_760 },
+    checksum: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    status: { type: 'string', enum: ['READY', 'FAILED'] },
+    createdAt: { type: 'string', format: 'date-time' },
+  },
+};
+
 export const openApiDocument = {
   openapi: '3.0.3',
   info: { title: 'Accordia API', version: '0.1.0' },
@@ -291,6 +307,7 @@ export const openApiDocument = {
       AcceptedInvitation: acceptedInvitationResponse,
       AgreementVersion: agreementVersionResponse,
       ChangeRequest: changeRequestResponse,
+      File: fileResponse,
     },
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -924,6 +941,50 @@ export const openApiDocument = {
           '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
           '409': { description: 'Versi aktif telah berubah', content: { 'application/json': { schema: errorResponse } } },
           '422': { description: 'Input tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/projects/{projectId}/files': {
+      post: {
+        operationId: 'uploadProjectFiles',
+        tags: ['Files'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Mengunggah file privat proyek',
+        description: 'Maksimal 5 file per request dan 10 MiB per file. Format yang diterima: PDF, JPEG, PNG.',
+        parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: {
+          required: true,
+          content: { 'multipart/form-data': { schema: {
+            type: 'object', required: ['files'],
+            properties: { files: { type: 'array', maxItems: 5, items: { type: 'string', format: 'binary' } } },
+          } } },
+        },
+        responses: {
+          '201': { description: 'File tervalidasi dan disimpan', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: fileResponse } } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '413': { description: 'File melebihi 10 MiB', content: { 'application/json': { schema: errorResponse } } },
+          '415': { description: 'Content-Type bukan multipart', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Jumlah atau tipe file tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '429': { description: 'Terlalu banyak upload', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/files/{fileId}/download': {
+      get: {
+        operationId: 'downloadPrivateFile',
+        tags: ['Files'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Mengunduh file privat sebagai attachment',
+        parameters: [{ name: 'fileId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': { description: 'Stream file privat', headers: { 'Content-Disposition': { schema: { type: 'string' } } }, content: {
+            'application/pdf': { schema: { type: 'string', format: 'binary' } },
+            'image/jpeg': { schema: { type: 'string', format: 'binary' } },
+            'image/png': { schema: { type: 'string', format: 'binary' } },
+          } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'File tidak ditemukan atau bukan anggota proyek', content: { 'application/json': { schema: errorResponse } } },
         },
       },
     },
