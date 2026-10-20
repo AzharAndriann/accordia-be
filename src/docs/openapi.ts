@@ -313,6 +313,26 @@ const deliveryResponse = {
   },
 };
 
+const paymentResponse = {
+  type: 'object', required: ['id', 'projectId', 'amountRupiah', 'submittedById', 'status', 'reviewedById', 'note', 'rejectionReason', 'reviewedAt', 'createdAt', 'files'],
+  properties: {
+    id: { type: 'string', format: 'uuid' }, projectId: { type: 'string', format: 'uuid' }, amountRupiah: { type: 'string' },
+    submittedById: { type: 'string', format: 'uuid' }, status: { type: 'string', enum: ['PENDING', 'CONFIRMED', 'REJECTED'] },
+    reviewedById: { type: 'string', format: 'uuid', nullable: true }, note: { type: 'string' }, rejectionReason: { type: 'string', nullable: true },
+    reviewedAt: { type: 'string', format: 'date-time', nullable: true }, createdAt: { type: 'string', format: 'date-time' },
+    files: { type: 'array', items: { type: 'object', properties: {
+      id: { type: 'string', format: 'uuid' }, originalName: { type: 'string' }, mimeType: { type: 'string' }, size: { type: 'integer' }, checksum: { type: 'string' },
+    } } },
+  },
+};
+const paymentSummaryResponse = {
+  type: 'object', required: ['agreementAmountRupiah', 'confirmedTotalRupiah', 'remainingRupiah', 'overpaymentRupiah', 'isPaid', 'isOverpaid'],
+  properties: {
+    agreementAmountRupiah: { type: 'string' }, confirmedTotalRupiah: { type: 'string' }, remainingRupiah: { type: 'string' },
+    overpaymentRupiah: { type: 'string' }, isPaid: { type: 'boolean' }, isOverpaid: { type: 'boolean' },
+  },
+};
+
 export const openApiDocument = {
   openapi: '3.0.3',
   info: { title: 'Accordia API', version: '0.1.0' },
@@ -329,6 +349,8 @@ export const openApiDocument = {
       ChangeRequest: changeRequestResponse,
       File: fileResponse,
       Delivery: deliveryResponse,
+      Payment: paymentResponse,
+      PaymentSummary: paymentSummaryResponse,
     },
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -1074,6 +1096,71 @@ export const openApiDocument = {
           '404': { description: 'Penyerahan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
           '409': { description: 'Status konflik atau batas revisi habis', content: { 'application/json': { schema: errorResponse } } },
           '422': { description: 'Input tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/projects/{projectId}/payments': {
+      get: {
+        operationId: 'listPayments', tags: ['Payments'], security: [{ bearerAuth: [] }], summary: 'Menampilkan pembayaran dan total terkonfirmasi',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': { description: 'Daftar pembayaran', content: { 'application/json': { schema: { type: 'object', properties: {
+            data: { type: 'array', items: paymentResponse }, nextCursor: { type: 'string', format: 'uuid', nullable: true }, paymentSummary: paymentSummaryResponse,
+          } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+      post: {
+        operationId: 'createPayment', tags: ['Payments'], security: [{ bearerAuth: [] }], summary: 'Mengirim bukti pembayaran berstatus pending',
+        parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: {
+          type: 'object', additionalProperties: false, required: ['amountRupiah', 'fileIds'], properties: {
+            amountRupiah: { type: 'string', pattern: '^\\d{1,18}$' },
+            fileIds: { type: 'array', minItems: 1, maxItems: 5, uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+            note: { type: 'string', maxLength: 5_000 },
+          },
+        } } } },
+        responses: {
+          '201': { description: 'Pembayaran pending dibuat', content: { 'application/json': { schema: { type: 'object', properties: { data: paymentResponse, paymentSummary: paymentSummaryResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya klien yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Status proyek atau file konflik', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Nominal atau bukti tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/payments/{paymentId}/confirm': {
+      post: {
+        operationId: 'confirmPayment', tags: ['Payments'], security: [{ bearerAuth: [] }], summary: 'Mengonfirmasi pembayaran',
+        parameters: [{ name: 'paymentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': { description: 'Pembayaran dikonfirmasi', content: { 'application/json': { schema: { type: 'object', properties: { data: paymentResponse, paymentSummary: paymentSummaryResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya freelancer yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Pembayaran tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Status pembayaran konflik', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/payments/{paymentId}/reject': {
+      post: {
+        operationId: 'rejectPayment', tags: ['Payments'], security: [{ bearerAuth: [] }], summary: 'Menolak pembayaran',
+        parameters: [{ name: 'paymentId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: {
+          type: 'object', additionalProperties: false, required: ['reason'], properties: { reason: { type: 'string', minLength: 3, maxLength: 2_000 } },
+        } } } },
+        responses: {
+          '200': { description: 'Pembayaran ditolak', content: { 'application/json': { schema: { type: 'object', properties: { data: paymentResponse, paymentSummary: paymentSummaryResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya freelancer yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Pembayaran tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Status pembayaran konflik', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Alasan tidak valid', content: { 'application/json': { schema: errorResponse } } },
         },
       },
     },

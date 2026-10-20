@@ -25,6 +25,8 @@ model User {
   uploadedFiles            File[] @relation("FileUploader")
   submittedDeliveries      Delivery[] @relation("DeliverySubmitter")
   requestedRevisions       RevisionRequest[] @relation("RevisionRequester")
+  submittedPayments        Payment[] @relation("PaymentSubmitter")
+  reviewedPayments         Payment[] @relation("PaymentReviewer")
 }
 
 enum ProjectStatus {
@@ -57,6 +59,7 @@ model Project {
   changeRequests           ChangeRequest[]
   files                    File[]
   deliveries               Delivery[]
+  payments                 Payment[]
 
   @@index([creatorId])
   @@index([createdAt, id])
@@ -177,6 +180,7 @@ model File {
   project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   uploader     User       @relation("FileUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
   deliveryFile DeliveryFile?
+  paymentFile  PaymentFile?
 
   @@index([projectId, createdAt])
   @@index([uploaderId])
@@ -229,6 +233,42 @@ model RevisionRequest {
   requestedBy   User     @relation("RevisionRequester", fields: [requestedById], references: [id], onDelete: Restrict)
 
   @@index([requestedById])
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  projectId       String        @db.Uuid
+  amountRupiah    Decimal       @db.Decimal(18, 0)
+  submittedById   String        @db.Uuid
+  status          PaymentStatus @default(PENDING)
+  reviewedById    String?       @db.Uuid
+  note            String        @db.Text
+  rejectionReason String?       @db.Text
+  reviewedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  submittedBy     User          @relation("PaymentSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  reviewedBy      User?         @relation("PaymentReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  files           PaymentFile[]
+
+  @@index([projectId, createdAt, id])
+  @@index([submittedById])
+  @@index([reviewedById])
+}
+
+model PaymentFile {
+  paymentId String  @db.Uuid
+  fileId    String  @unique @db.Uuid
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  file      File    @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([paymentId, fileId])
 }
 
 model AgreementApproval {
