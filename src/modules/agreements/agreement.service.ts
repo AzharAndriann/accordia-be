@@ -11,12 +11,18 @@ import { hashAgreementSnapshot } from './agreement.snapshot';
 
 export function createAgreementService(repository: AgreementRepository) {
   return {
-    createDraft(userId: string, projectId: string, snapshot: AgreementSnapshot) {
+    createDraft(
+      userId: string,
+      projectId: string,
+      snapshot: AgreementSnapshot,
+      changeRequestId?: string,
+    ) {
       return repository.createDraft({
         userId,
         projectId,
         snapshot,
         contentHash: hashAgreementSnapshot(snapshot),
+        changeRequestId,
       });
     },
 

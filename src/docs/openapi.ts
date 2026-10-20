@@ -242,6 +242,41 @@ const agreementActionResponses = (
   },
 });
 
+const changeRequestResponse = {
+  type: 'object',
+  required: [
+    'id', 'projectId', 'requestedById', 'reason', 'baseAgreementVersionId',
+    'proposedVersionId', 'status', 'comparison', 'createdAt', 'updatedAt',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    projectId: { type: 'string', format: 'uuid' },
+    requestedById: { type: 'string', format: 'uuid' },
+    reason: { type: 'string' },
+    baseAgreementVersionId: { type: 'string', format: 'uuid' },
+    proposedVersionId: { type: 'string', format: 'uuid', nullable: true },
+    status: { type: 'string', enum: ['REQUESTED', 'PROPOSED', 'ACCEPTED', 'REJECTED'] },
+    comparison: {
+      type: 'object',
+      nullable: true,
+      properties: {
+        amountRupiah: {
+          type: 'object',
+          properties: {
+            before: { type: 'string' }, after: { type: 'string' }, difference: { type: 'string' },
+          },
+        },
+        deadline: {
+          type: 'object',
+          properties: { before: { type: 'string', format: 'date' }, after: { type: 'string', format: 'date' } },
+        },
+      },
+    },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+};
+
 export const openApiDocument = {
   openapi: '3.0.3',
   info: { title: 'Accordia API', version: '0.1.0' },
@@ -255,6 +290,7 @@ export const openApiDocument = {
       CreatedInvitation: createdInvitationResponse,
       AcceptedInvitation: acceptedInvitationResponse,
       AgreementVersion: agreementVersionResponse,
+      ChangeRequest: changeRequestResponse,
     },
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -713,7 +749,13 @@ export const openApiDocument = {
           required: true,
           content: {
             'application/json': {
-              schema: agreementSnapshotRequest,
+              schema: {
+                ...agreementSnapshotRequest,
+                properties: {
+                  ...agreementSnapshotRequest.properties,
+                  changeRequestId: { type: 'string', format: 'uuid' },
+                },
+              },
               example: agreementSnapshotExample,
             },
           },
@@ -827,6 +869,62 @@ export const openApiDocument = {
           },
         },
         responses: agreementActionResponses('Kesepakatan ditolak'),
+      },
+    },
+    '/projects/{projectId}/change-requests': {
+      get: {
+        operationId: 'listChangeRequests',
+        tags: ['Changes'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Menampilkan permintaan perubahan proyek',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Daftar permintaan perubahan',
+            content: { 'application/json': { schema: {
+              type: 'object', required: ['data', 'nextCursor'],
+              properties: {
+                data: { type: 'array', items: changeRequestResponse },
+                nextCursor: { type: 'string', format: 'uuid', nullable: true },
+              },
+            } } },
+          },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Pagination tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+      post: {
+        operationId: 'createChangeRequest',
+        tags: ['Changes'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Meminta perubahan kesepakatan aktif',
+        parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': {
+            schema: {
+              type: 'object', additionalProperties: false,
+              required: ['reason', 'expectedActiveVersionId'],
+              properties: {
+                reason: { type: 'string', minLength: 3, maxLength: 5_000 },
+                expectedActiveVersionId: { type: 'string', format: 'uuid' },
+              },
+            },
+          } },
+        },
+        responses: {
+          '201': { description: 'Permintaan perubahan dibuat', content: { 'application/json': { schema: { type: 'object', properties: { data: changeRequestResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya klien yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Versi aktif telah berubah', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Input tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
       },
     },
   },

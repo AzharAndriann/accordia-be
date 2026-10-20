@@ -32,6 +32,8 @@ Endpoint yang tersedia:
 - `POST http://localhost:3000/api/v1/agreement-versions/:versionId/submit`
 - `POST http://localhost:3000/api/v1/agreement-versions/:versionId/approve`
 - `POST http://localhost:3000/api/v1/agreement-versions/:versionId/reject`
+- `GET http://localhost:3000/api/v1/projects/:projectId/change-requests`
+- `POST http://localhost:3000/api/v1/projects/:projectId/change-requests`
 - Swagger UI: `http://localhost:3000/api-docs/`
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 

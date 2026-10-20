@@ -5,7 +5,7 @@ import { authenticate } from '../auth/auth.middleware';
 import { createPrismaAgreementRepository } from './agreement.repository';
 import {
   agreementProjectParamsSchema,
-  agreementSnapshotSchema,
+  createAgreementSchema,
   agreementVersionParamsSchema,
   approveAgreementSchema,
   listAgreementVersionsQuerySchema,
@@ -61,11 +61,13 @@ export function createAgreementRouter(
     mutationLimiter,
     async (request, response) => {
       const { projectId } = agreementProjectParamsSchema.parse(request.params);
-      const snapshot = agreementSnapshotSchema.parse(request.body);
+      const input = createAgreementSchema.parse(request.body);
+      const { changeRequestId, ...snapshot } = input;
       const agreement = await agreementService.createDraft(
         request.auth!.userId,
         projectId,
         snapshot,
+        changeRequestId,
       );
       response.status(201).json({ data: agreement });
     },

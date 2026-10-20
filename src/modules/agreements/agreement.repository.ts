@@ -2,6 +2,7 @@ import type { AgreementVersion, PrismaClient } from '../../generated/prisma/clie
 import { Prisma } from '../../generated/prisma/client';
 import {
   AgreementStatus,
+  ChangeRequestStatus,
   ProjectRole,
   ProjectStatus,
 } from '../../generated/prisma/enums';
@@ -56,6 +57,7 @@ export interface AgreementRepository {
     userId: string;
     snapshot: AgreementSnapshot;
     contentHash: string;
+    changeRequestId?: string;
   }): Promise<AgreementVersionView>;
   listForProject(input: {
     projectId: string;
@@ -140,6 +142,33 @@ export function createPrismaAgreementRepository(
                 }
                 assertProjectCanChangeAgreement(project.status);
 
+                if (input.changeRequestId) {
+                  const changeRequest = await transaction.changeRequest.findFirst({
+                    where: { id: input.changeRequestId, projectId: input.projectId },
+                    select: {
+                      status: true,
+                      proposedVersionId: true,
+                      baseAgreementVersionId: true,
+                    },
+                  });
+                  if (!changeRequest) {
+                    throw new AppError(404, 'CHANGE_REQUEST_NOT_FOUND', 'Permintaan perubahan tidak ditemukan');
+                  }
+                  if (
+                    changeRequest.status !== ChangeRequestStatus.REQUESTED ||
+                    changeRequest.proposedVersionId
+                  ) {
+                    throw new AppError(409, 'CHANGE_REQUEST_CONFLICT', 'Permintaan perubahan sudah diproses');
+                  }
+                  const currentProject = await transaction.project.findUniqueOrThrow({
+                    where: { id: input.projectId },
+                    select: { activeAgreementVersionId: true },
+                  });
+                  if (currentProject.activeAgreementVersionId !== changeRequest.baseAgreementVersionId) {
+                    throw new AppError(409, 'VERSION_CONFLICT', 'Versi kesepakatan aktif telah berubah');
+                  }
+                }
+
                 const latest = await transaction.agreementVersion.aggregate({
                   where: { projectId: input.projectId },
                   _max: { versionNumber: true },
@@ -154,6 +183,23 @@ export function createPrismaAgreementRepository(
                     versionNumber: (latest._max.versionNumber ?? 0) + 1,
                   },
                 });
+
+                if (input.changeRequestId) {
+                  const linked = await transaction.changeRequest.updateMany({
+                    where: {
+                      id: input.changeRequestId,
+                      status: ChangeRequestStatus.REQUESTED,
+                      proposedVersionId: null,
+                    },
+                    data: {
+                      proposedVersionId: version.id,
+                      status: ChangeRequestStatus.PROPOSED,
+                    },
+                  });
+                  if (linked.count !== 1) {
+                    throw new AppError(409, 'CHANGE_REQUEST_CONFLICT', 'Permintaan perubahan sudah diproses');
+                  }
+                }
 
                 return toAgreementView(version);
               },
@@ -451,6 +497,10 @@ export function createPrismaAgreementRepository(
                   'Versi kesepakatan telah berubah',
                 );
               }
+              await transaction.changeRequest.updateMany({
+                where: { proposedVersionId: version.id },
+                data: { status: ChangeRequestStatus.ACCEPTED },
+              });
             }
 
             const result = await transaction.agreementVersion.findUniqueOrThrow({
@@ -505,6 +555,11 @@ export function createPrismaAgreementRepository(
                 'Versi kesepakatan telah berubah',
               );
             }
+
+            await transaction.changeRequest.updateMany({
+              where: { proposedVersionId: version.id },
+              data: { status: ChangeRequestStatus.REJECTED },
+            });
 
             const result = await transaction.agreementVersion.findUniqueOrThrow({
               where: { id: version.id },

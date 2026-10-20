@@ -41,6 +41,10 @@ export const agreementSnapshotSchema = z
   })
   .strict();
 
+export const createAgreementSchema = agreementSnapshotSchema.extend({
+  changeRequestId: z.string().uuid('Change request ID tidak valid').optional(),
+});
+
 export const updateAgreementSchema = agreementSnapshotSchema
   .partial()
   .refine((input) => Object.keys(input).length > 0, 'Minimal satu field harus diubah');
@@ -79,6 +83,7 @@ export const rejectAgreementSchema = z
   .strict();
 
 export type AgreementSnapshot = z.infer<typeof agreementSnapshotSchema>;
+export type CreateAgreementInput = z.infer<typeof createAgreementSchema>;
 export type UpdateAgreementInput = z.infer<typeof updateAgreementSchema>;
 export type ListAgreementVersionsQuery = z.infer<
   typeof listAgreementVersionsQuerySchema

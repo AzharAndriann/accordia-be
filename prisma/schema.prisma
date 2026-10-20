@@ -21,6 +21,7 @@ model User {
   createdAgreementVersions AgreementVersion[]  @relation("AgreementCreator")
   rejectedAgreementVersions AgreementVersion[] @relation("AgreementRejector")
   agreementApprovals       AgreementApproval[]
+  changeRequests           ChangeRequest[] @relation("ChangeRequester")
 }
 
 enum ProjectStatus {
@@ -50,6 +51,7 @@ model Project {
   invitations              Invitation[]
   agreementVersions        AgreementVersion[] @relation("ProjectAgreementVersions")
   activeAgreementVersion   AgreementVersion?  @relation("ActiveAgreementVersion", fields: [activeAgreementVersionId], references: [id], onDelete: SetNull)
+  changeRequests           ChangeRequest[]
 
   @@index([creatorId])
   @@index([createdAt, id])
@@ -118,10 +120,36 @@ model AgreementVersion {
   createdBy                User                @relation("AgreementCreator", fields: [createdById], references: [id], onDelete: Restrict)
   rejectedBy               User?               @relation("AgreementRejector", fields: [rejectedById], references: [id], onDelete: Restrict)
   approvals                AgreementApproval[]
+  proposedForChange        ChangeRequest?      @relation("ProposedAgreementVersion")
 
   @@unique([projectId, versionNumber])
   @@index([projectId, status])
   @@index([createdById])
+}
+
+enum ChangeRequestStatus {
+  REQUESTED
+  PROPOSED
+  ACCEPTED
+  REJECTED
+}
+
+model ChangeRequest {
+  id                     String              @id @default(uuid()) @db.Uuid
+  projectId              String              @db.Uuid
+  requestedById          String              @db.Uuid
+  reason                 String              @db.Text
+  baseAgreementVersionId String              @db.Uuid
+  proposedVersionId      String?             @unique @db.Uuid
+  status                 ChangeRequestStatus @default(REQUESTED)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  project                Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requestedBy            User                @relation("ChangeRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  proposedVersion        AgreementVersion?   @relation("ProposedAgreementVersion", fields: [proposedVersionId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt, id])
+  @@index([requestedById])
 }
 
 model AgreementApproval {
