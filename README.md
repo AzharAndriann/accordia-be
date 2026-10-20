@@ -36,6 +36,10 @@ Endpoint yang tersedia:
 - `POST http://localhost:3000/api/v1/projects/:projectId/change-requests`
 - `POST http://localhost:3000/api/v1/projects/:projectId/files`
 - `GET http://localhost:3000/api/v1/files/:fileId/download`
+- `GET http://localhost:3000/api/v1/projects/:projectId/deliveries`
+- `POST http://localhost:3000/api/v1/projects/:projectId/deliveries`
+- `POST http://localhost:3000/api/v1/deliveries/:deliveryId/accept`
+- `POST http://localhost:3000/api/v1/deliveries/:deliveryId/request-revision`
 - Swagger UI: `http://localhost:3000/api-docs/`
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 

@@ -12,6 +12,7 @@ import { createInvitationRouter } from './modules/invitations/invitation.routes'
 import { createAgreementRouter } from './modules/agreements/agreement.routes';
 import { createChangeRouter } from './modules/changes/change.routes';
 import { createFileRouter } from './modules/files/file.routes';
+import { createDeliveryRouter } from './modules/deliveries/delivery.routes';
 import { AppError } from './shared/errors';
 
 type ReadinessDatabase = {
@@ -48,6 +49,7 @@ export function createApp(database: ReadinessDatabase = prisma) {
   app.use('/api/v1', createAgreementRouter());
   app.use('/api/v1', createChangeRouter());
   app.use('/api/v1', createFileRouter());
+  app.use('/api/v1', createDeliveryRouter());
 
   if (env.API_DOCS_ENABLED) {
     app.get('/openapi.json', (_req, res) => res.json(openApiDocument));

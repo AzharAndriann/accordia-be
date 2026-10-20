@@ -32,6 +32,9 @@ describe('system endpoints', () => {
       '/projects/{projectId}/change-requests',
       '/projects/{projectId}/files',
       '/files/{fileId}/download',
+      '/projects/{projectId}/deliveries',
+      '/deliveries/{deliveryId}/accept',
+      '/deliveries/{deliveryId}/request-revision',
     ]);
   });
 

@@ -293,6 +293,26 @@ const fileResponse = {
   },
 };
 
+const deliveryResponse = {
+  type: 'object',
+  required: ['id', 'projectId', 'agreementVersionId', 'submittedById', 'note', 'links', 'status', 'submittedAt', 'reviewedAt', 'files', 'revisionRequest'],
+  properties: {
+    id: { type: 'string', format: 'uuid' }, projectId: { type: 'string', format: 'uuid' },
+    agreementVersionId: { type: 'string', format: 'uuid' }, submittedById: { type: 'string', format: 'uuid' },
+    note: { type: 'string' }, links: { type: 'array', items: { type: 'string', format: 'uri' } },
+    status: { type: 'string', enum: ['PENDING', 'REVISION_REQUESTED', 'ACCEPTED'] },
+    submittedAt: { type: 'string', format: 'date-time' }, reviewedAt: { type: 'string', format: 'date-time', nullable: true },
+    files: { type: 'array', items: { type: 'object', required: ['id', 'originalName', 'mimeType', 'size', 'checksum'], properties: {
+      id: { type: 'string', format: 'uuid' }, originalName: { type: 'string' }, mimeType: { type: 'string' },
+      size: { type: 'integer' }, checksum: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    } } },
+    revisionRequest: { type: 'object', nullable: true, properties: {
+      id: { type: 'string', format: 'uuid' }, requestedById: { type: 'string', format: 'uuid' },
+      reason: { type: 'string' }, roundNumber: { type: 'integer', minimum: 1 }, createdAt: { type: 'string', format: 'date-time' },
+    } },
+  },
+};
+
 export const openApiDocument = {
   openapi: '3.0.3',
   info: { title: 'Accordia API', version: '0.1.0' },
@@ -308,6 +328,7 @@ export const openApiDocument = {
       AgreementVersion: agreementVersionResponse,
       ChangeRequest: changeRequestResponse,
       File: fileResponse,
+      Delivery: deliveryResponse,
     },
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -985,6 +1006,74 @@ export const openApiDocument = {
           } },
           '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
           '404': { description: 'File tidak ditemukan atau bukan anggota proyek', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/projects/{projectId}/deliveries': {
+      get: {
+        operationId: 'listDeliveries', tags: ['Deliveries'], security: [{ bearerAuth: [] }],
+        summary: 'Menampilkan histori penyerahan',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': { description: 'Histori penyerahan', content: { 'application/json': { schema: { type: 'object', properties: {
+            data: { type: 'array', items: deliveryResponse }, nextCursor: { type: 'string', format: 'uuid', nullable: true },
+          } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+      post: {
+        operationId: 'createDelivery', tags: ['Deliveries'], security: [{ bearerAuth: [] }],
+        summary: 'Menyerahkan hasil untuk kesepakatan aktif',
+        parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: {
+          type: 'object', additionalProperties: false, required: ['agreementVersionId'],
+          properties: {
+            agreementVersionId: { type: 'string', format: 'uuid' }, note: { type: 'string', maxLength: 5_000 },
+            fileIds: { type: 'array', maxItems: 5, uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+            links: { type: 'array', maxItems: 10, uniqueItems: true, items: { type: 'string', format: 'uri' } },
+          },
+        } } } },
+        responses: {
+          '201': { description: 'Penyerahan dibuat', content: { 'application/json': { schema: { type: 'object', properties: { data: deliveryResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya freelancer yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Versi/status/pending delivery konflik', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Input atau file tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/deliveries/{deliveryId}/accept': {
+      post: {
+        operationId: 'acceptDelivery', tags: ['Deliveries'], security: [{ bearerAuth: [] }], summary: 'Menerima hasil penyerahan',
+        parameters: [{ name: 'deliveryId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': { description: 'Hasil diterima', content: { 'application/json': { schema: { type: 'object', properties: { data: deliveryResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya klien yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Penyerahan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Status telah berubah', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/deliveries/{deliveryId}/request-revision': {
+      post: {
+        operationId: 'requestDeliveryRevision', tags: ['Deliveries'], security: [{ bearerAuth: [] }], summary: 'Meminta satu putaran revisi',
+        parameters: [{ name: 'deliveryId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: {
+          type: 'object', additionalProperties: false, required: ['reason'], properties: { reason: { type: 'string', minLength: 3, maxLength: 5_000 } },
+        } } } },
+        responses: {
+          '200': { description: 'Putaran revisi dicatat', content: { 'application/json': { schema: { type: 'object', properties: { data: deliveryResponse } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya klien yang diizinkan', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Penyerahan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Status konflik atau batas revisi habis', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Input tidak valid', content: { 'application/json': { schema: errorResponse } } },
         },
       },
     },

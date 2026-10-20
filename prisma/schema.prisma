@@ -23,6 +23,8 @@ model User {
   agreementApprovals       AgreementApproval[]
   changeRequests           ChangeRequest[] @relation("ChangeRequester")
   uploadedFiles            File[] @relation("FileUploader")
+  submittedDeliveries      Delivery[] @relation("DeliverySubmitter")
+  requestedRevisions       RevisionRequest[] @relation("RevisionRequester")
 }
 
 enum ProjectStatus {
@@ -54,6 +56,7 @@ model Project {
   activeAgreementVersion   AgreementVersion?  @relation("ActiveAgreementVersion", fields: [activeAgreementVersionId], references: [id], onDelete: SetNull)
   changeRequests           ChangeRequest[]
   files                    File[]
+  deliveries               Delivery[]
 
   @@index([creatorId])
   @@index([createdAt, id])
@@ -123,6 +126,7 @@ model AgreementVersion {
   rejectedBy               User?               @relation("AgreementRejector", fields: [rejectedById], references: [id], onDelete: Restrict)
   approvals                AgreementApproval[]
   proposedForChange        ChangeRequest?      @relation("ProposedAgreementVersion")
+  deliveries               Delivery[]
 
   @@unique([projectId, versionNumber])
   @@index([projectId, status])
@@ -172,9 +176,59 @@ model File {
   createdAt    DateTime   @default(now())
   project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   uploader     User       @relation("FileUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+  deliveryFile DeliveryFile?
 
   @@index([projectId, createdAt])
   @@index([uploaderId])
+}
+
+enum DeliveryStatus {
+  PENDING
+  REVISION_REQUESTED
+  ACCEPTED
+}
+
+model Delivery {
+  id                 String         @id @default(uuid()) @db.Uuid
+  projectId          String         @db.Uuid
+  agreementVersionId String         @db.Uuid
+  submittedById      String         @db.Uuid
+  note               String         @db.Text
+  links              String[]
+  status             DeliveryStatus @default(PENDING)
+  submittedAt        DateTime       @default(now())
+  reviewedAt         DateTime?
+  project            Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agreementVersion   AgreementVersion @relation(fields: [agreementVersionId], references: [id], onDelete: Restrict)
+  submittedBy        User           @relation("DeliverySubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  files              DeliveryFile[]
+  revisionRequest    RevisionRequest?
+
+  @@index([projectId, submittedAt, id])
+  @@index([agreementVersionId])
+  @@index([submittedById])
+}
+
+model DeliveryFile {
+  deliveryId String   @db.Uuid
+  fileId     String   @unique @db.Uuid
+  delivery   Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  file       File     @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([deliveryId, fileId])
+}
+
+model RevisionRequest {
+  id            String   @id @default(uuid()) @db.Uuid
+  deliveryId    String   @unique @db.Uuid
+  requestedById String   @db.Uuid
+  reason        String   @db.Text
+  roundNumber   Int
+  createdAt     DateTime @default(now())
+  delivery      Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  requestedBy   User     @relation("RevisionRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  @@index([requestedById])
 }
 
 model AgreementApproval {
