@@ -67,6 +67,8 @@ export function createAgreementService(repository: AgreementRepository) {
 
       return repository.updateDraft({
         versionId,
+        projectId: context.agreement.projectId,
+        userId,
         expectedUpdatedAt: context.agreement.updatedAt,
         changes,
         contentHash: hashAgreementSnapshot(merged),

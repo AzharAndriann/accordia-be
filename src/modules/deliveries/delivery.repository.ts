@@ -1,10 +1,11 @@
 import { Prisma, type PrismaClient } from '../../generated/prisma/client';
-import { DeliveryStatus, FileStatus, ProjectRole, ProjectStatus } from '../../generated/prisma/enums';
+import { AuditEventType, DeliveryStatus, FileStatus, ProjectRole, ProjectStatus } from '../../generated/prisma/enums';
 import { AppError } from '../../shared/errors';
 import { hasPrismaErrorCode, withTransactionRetry } from '../../shared/prisma-transaction';
 import type { CreateDeliveryInput } from './delivery.schema';
 import type { DeliveryPage, DeliveryView } from './delivery.types';
 import { nextRevisionRound } from './delivery.rules';
+import { recordAuditEvent } from '../events/event.audit';
 
 const deliveryInclude = {
   files: { include: { file: true } },
@@ -84,6 +85,11 @@ export function createPrismaDeliveryRepository(database: PrismaClient): Delivery
             },
             include: deliveryInclude,
           });
+          await recordAuditEvent(tx, {
+            projectId: input.projectId, actorId: input.userId,
+            type: AuditEventType.DELIVERY_SUBMITTED, entityType: 'Delivery', entityId: row.id,
+            metadata: { agreementVersionId: input.agreementVersionId },
+          });
           return toView(row);
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
       } catch (error) {
@@ -125,6 +131,10 @@ export function createPrismaDeliveryRepository(database: PrismaClient): Delivery
         });
         if (updated.count !== 1) throw new AppError(409, 'DELIVERY_CONFLICT', 'Penyerahan telah berubah');
         await tx.project.update({ where: { id: row.projectId }, data: { status: ProjectStatus.DELIVERED } });
+        await recordAuditEvent(tx, {
+          projectId: row.projectId, actorId: input.userId,
+          type: AuditEventType.DELIVERY_ACCEPTED, entityType: 'Delivery', entityId: row.id,
+        });
         return toView(await tx.delivery.findUniqueOrThrow({ where: { id: row.id }, include: deliveryInclude }));
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     },
@@ -152,8 +162,13 @@ export function createPrismaDeliveryRepository(database: PrismaClient): Delivery
           data: { status: DeliveryStatus.REVISION_REQUESTED, reviewedAt: input.now },
         });
         if (updated.count !== 1) throw new AppError(409, 'DELIVERY_CONFLICT', 'Penyerahan telah berubah');
-        await tx.revisionRequest.create({
+        const revision = await tx.revisionRequest.create({
           data: { deliveryId: row.id, requestedById: input.userId, reason: input.reason, roundNumber },
+        });
+        await recordAuditEvent(tx, {
+          projectId: row.projectId, actorId: input.userId,
+          type: AuditEventType.REVISION_REQUESTED, entityType: 'RevisionRequest', entityId: revision.id,
+          metadata: { deliveryId: row.id, roundNumber },
         });
         return toView(await tx.delivery.findUniqueOrThrow({ where: { id: row.id }, include: deliveryInclude }));
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));

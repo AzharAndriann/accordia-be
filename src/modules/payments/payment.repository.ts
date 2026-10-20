@@ -1,10 +1,11 @@
 import { Prisma, type PrismaClient } from '../../generated/prisma/client';
-import { DeliveryStatus, FileStatus, PaymentStatus, ProjectRole, ProjectStatus } from '../../generated/prisma/enums';
+import { AuditEventType, DeliveryStatus, FileStatus, PaymentStatus, ProjectRole, ProjectStatus } from '../../generated/prisma/enums';
 import { AppError } from '../../shared/errors';
 import { hasPrismaErrorCode, withTransactionRetry } from '../../shared/prisma-transaction';
 import { calculatePaymentSummary } from './payment.rules';
 import type { CreatePaymentInput } from './payment.schema';
 import type { PaymentMutation, PaymentPage, PaymentSummary, PaymentView } from './payment.types';
+import { recordAuditEvent } from '../events/event.audit';
 
 const paymentInclude = { files: { include: { file: true } } } satisfies Prisma.PaymentInclude;
 type PaymentRow = Prisma.PaymentGetPayload<{ include: typeof paymentInclude }>;
@@ -58,6 +59,11 @@ export function createPrismaPaymentRepository(database: PrismaClient): PaymentRe
               note: input.note, files: { create: fileIds.map((fileId) => ({ fileId })) },
             }, include: paymentInclude,
           });
+          await recordAuditEvent(tx, {
+            projectId: input.projectId, actorId: input.userId,
+            type: AuditEventType.PAYMENT_SUBMITTED, entityType: 'Payment', entityId: row.id,
+            metadata: { amountRupiah: row.amountRupiah.toString() },
+          });
           return { payment: toView(row), paymentSummary: await loadSummary(tx, input.projectId) };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
       } catch (error) {
@@ -99,6 +105,11 @@ export function createPrismaPaymentRepository(database: PrismaClient): PaymentRe
           const acceptedDelivery = await tx.delivery.findFirst({ where: { projectId: row.projectId, status: DeliveryStatus.ACCEPTED }, select: { id: true } });
           if (acceptedDelivery) await tx.project.update({ where: { id: row.projectId }, data: { status: ProjectStatus.COMPLETED } });
         }
+        await recordAuditEvent(tx, {
+          projectId: row.projectId, actorId: input.userId,
+          type: AuditEventType.PAYMENT_CONFIRMED, entityType: 'Payment', entityId: row.id,
+          metadata: { amountRupiah: row.amountRupiah.toString() },
+        });
         const payment = await tx.payment.findUniqueOrThrow({ where: { id: row.id }, include: paymentInclude });
         return { payment: toView(payment), paymentSummary };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
@@ -118,6 +129,10 @@ export function createPrismaPaymentRepository(database: PrismaClient): PaymentRe
           data: { status: PaymentStatus.REJECTED, reviewedById: input.userId, reviewedAt: input.now, rejectionReason: input.reason },
         });
         if (updated.count !== 1) throw new AppError(409, 'PAYMENT_CONFLICT', 'Pembayaran telah berubah');
+        await recordAuditEvent(tx, {
+          projectId: row.projectId, actorId: input.userId,
+          type: AuditEventType.PAYMENT_REJECTED, entityType: 'Payment', entityId: row.id,
+        });
         const payment = await tx.payment.findUniqueOrThrow({ where: { id: row.id }, include: paymentInclude });
         return { payment: toView(payment), paymentSummary: await loadSummary(tx, row.projectId) };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));

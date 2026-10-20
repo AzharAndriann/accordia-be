@@ -14,6 +14,7 @@ import { createChangeRouter } from './modules/changes/change.routes';
 import { createFileRouter } from './modules/files/file.routes';
 import { createDeliveryRouter } from './modules/deliveries/delivery.routes';
 import { createPaymentRouter } from './modules/payments/payment.routes';
+import { createEventRouter } from './modules/events/event.routes';
 import { AppError } from './shared/errors';
 
 type ReadinessDatabase = {
@@ -52,6 +53,7 @@ export function createApp(database: ReadinessDatabase = prisma) {
   app.use('/api/v1', createFileRouter());
   app.use('/api/v1', createDeliveryRouter());
   app.use('/api/v1', createPaymentRouter());
+  app.use('/api/v1', createEventRouter());
 
   if (env.API_DOCS_ENABLED) {
     app.get('/openapi.json', (_req, res) => res.json(openApiDocument));

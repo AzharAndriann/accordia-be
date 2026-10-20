@@ -44,6 +44,7 @@ Endpoint yang tersedia:
 - `POST http://localhost:3000/api/v1/projects/:projectId/payments`
 - `POST http://localhost:3000/api/v1/payments/:paymentId/confirm`
 - `POST http://localhost:3000/api/v1/payments/:paymentId/reject`
+- `GET http://localhost:3000/api/v1/projects/:projectId/events`
 - Swagger UI: `http://localhost:3000/api-docs/`
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 
@@ -82,3 +83,6 @@ Kesepakatan dibuat sebagai draft oleh freelancer. Setelah disubmit, snapshot
 tidak dapat diubah dan kedua anggota proyek harus menyetujui version ID serta
 `contentHash` yang sama. Persetujuan kedua mengaktifkan versi tersebut dan
 memperbarui status proyek menjadi `ACTIVE` dalam satu transaksi.
+
+Timeline proyek bersifat append-only dan hanya dapat dibaca oleh anggota proyek.
+Event audit dibuat di transaksi yang sama dengan mutasi bisnis terkait.

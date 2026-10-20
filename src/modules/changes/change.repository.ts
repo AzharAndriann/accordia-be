@@ -1,8 +1,10 @@
-import type { PrismaClient } from '../../generated/prisma/client';
-import { ProjectRole } from '../../generated/prisma/enums';
+import { Prisma, type PrismaClient } from '../../generated/prisma/client';
+import { AuditEventType, ProjectRole } from '../../generated/prisma/enums';
 import { AppError } from '../../shared/errors';
 import type { CreateChangeRequestInput } from './change.schema';
 import type { ChangeRequestPage, ChangeRequestView } from './change.types';
+import { recordAuditEvent } from '../events/event.audit';
+import { withTransactionRetry } from '../../shared/prisma-transaction';
 
 type ChangeRow = Awaited<ReturnType<PrismaClient['changeRequest']['findFirstOrThrow']>>;
 
@@ -47,28 +49,27 @@ export function createPrismaChangeRepository(database: PrismaClient): ChangeRepo
 
   return {
     async create(input) {
-      const member = await database.projectMember.findUnique({
-        where: { projectId_userId: { projectId: input.projectId, userId: input.userId } },
-        include: { project: { select: { activeAgreementVersionId: true } } },
-      });
-      if (!member) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Proyek tidak ditemukan');
-      if (member.role !== ProjectRole.CLIENT) {
-        throw new AppError(403, 'FORBIDDEN', 'Hanya klien yang dapat meminta perubahan');
-      }
-      if (!member.project.activeAgreementVersionId) {
-        throw new AppError(409, 'AGREEMENT_REQUIRED', 'Proyek belum memiliki kesepakatan aktif');
-      }
-      if (member.project.activeAgreementVersionId !== input.expectedActiveVersionId) {
-        throw new AppError(409, 'VERSION_CONFLICT', 'Versi kesepakatan aktif telah berubah');
-      }
-      const row = await database.changeRequest.create({
-        data: {
-          projectId: input.projectId,
-          requestedById: input.userId,
-          reason: input.reason,
-          baseAgreementVersionId: input.expectedActiveVersionId,
-        },
-      });
+      const row = await withTransactionRetry(() => database.$transaction(async (transaction) => {
+          const member = await transaction.projectMember.findUnique({
+            where: { projectId_userId: { projectId: input.projectId, userId: input.userId } },
+            include: { project: { select: { activeAgreementVersionId: true } } },
+          });
+          if (!member) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Proyek tidak ditemukan');
+          if (member.role !== ProjectRole.CLIENT) throw new AppError(403, 'FORBIDDEN', 'Hanya klien yang dapat meminta perubahan');
+          if (!member.project.activeAgreementVersionId) throw new AppError(409, 'AGREEMENT_REQUIRED', 'Proyek belum memiliki kesepakatan aktif');
+          if (member.project.activeAgreementVersionId !== input.expectedActiveVersionId) {
+            throw new AppError(409, 'VERSION_CONFLICT', 'Versi kesepakatan aktif telah berubah');
+          }
+          const created = await transaction.changeRequest.create({
+            data: { projectId: input.projectId, requestedById: input.userId, reason: input.reason, baseAgreementVersionId: input.expectedActiveVersionId },
+          });
+          await recordAuditEvent(transaction, {
+            projectId: input.projectId, actorId: input.userId,
+            type: AuditEventType.CHANGE_REQUEST_CREATED, entityType: 'ChangeRequest', entityId: created.id,
+            metadata: { baseAgreementVersionId: input.expectedActiveVersionId },
+          });
+          return created;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
       return toView(row);
     },
 

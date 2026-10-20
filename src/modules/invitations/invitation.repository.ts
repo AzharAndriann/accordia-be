@@ -1,6 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client';
 import { Prisma } from '../../generated/prisma/client';
-import { ProjectRole } from '../../generated/prisma/enums';
+import { AuditEventType, ProjectRole } from '../../generated/prisma/enums';
 import { AppError } from '../../shared/errors';
 import {
   hasPrismaErrorCode,
@@ -8,6 +8,7 @@ import {
 } from '../../shared/prisma-transaction';
 import { assertInvitationCanBeAccepted } from './invitation.rules';
 import type { AcceptedInvitation } from './invitation.types';
+import { recordAuditEvent } from '../events/event.audit';
 
 type InvitationContext = {
   projectId: string;
@@ -75,15 +76,25 @@ export function createPrismaInvitationRepository(
     },
 
     create(input) {
-      return database.invitation.create({
-        data: input,
-        select: {
-          id: true,
-          projectId: true,
-          targetEmail: true,
-          expiresAt: true,
-          createdAt: true,
-        },
+      return database.$transaction(async (transaction) => {
+        const invitation = await transaction.invitation.create({
+          data: input,
+          select: {
+            id: true,
+            projectId: true,
+            targetEmail: true,
+            expiresAt: true,
+            createdAt: true,
+          },
+        });
+        await recordAuditEvent(transaction, {
+          projectId: input.projectId,
+          actorId: input.inviterId,
+          type: AuditEventType.INVITATION_CREATED,
+          entityType: 'Invitation',
+          entityId: invitation.id,
+        });
+        return invitation;
       });
     },
 
@@ -136,6 +147,14 @@ export function createPrismaInvitationRepository(
                   userId: context.user.id,
                   role: ProjectRole.CLIENT,
                 },
+              });
+
+              await recordAuditEvent(transaction, {
+                projectId: context.invitation.projectId,
+                actorId: input.userId,
+                type: AuditEventType.INVITATION_ACCEPTED,
+                entityType: 'Invitation',
+                entityId: context.invitation.id,
               });
 
               return {

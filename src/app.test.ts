@@ -38,6 +38,7 @@ describe('system endpoints', () => {
       '/projects/{projectId}/payments',
       '/payments/{paymentId}/confirm',
       '/payments/{paymentId}/reject',
+      '/projects/{projectId}/events',
     ]);
   });
 

@@ -1,7 +1,8 @@
 import type { PrismaClient } from '../../generated/prisma/client';
-import { FileStatus } from '../../generated/prisma/enums';
+import { AuditEventType, FileStatus } from '../../generated/prisma/enums';
 import { AppError } from '../../shared/errors';
 import type { DownloadableFile, FileView, StoredUpload } from './file.types';
+import { recordAuditEvent } from '../events/event.audit';
 
 function toView(file: DownloadableFile): FileView {
   const { storageKey: _storageKey, ...view } = file;
@@ -33,7 +34,7 @@ export function createPrismaFileRepository(database: PrismaClient): FileReposito
         if (!member) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Proyek tidak ditemukan');
         const files = [];
         for (const upload of uploads) {
-          files.push(await transaction.file.create({
+          const file = await transaction.file.create({
             data: {
               projectId,
               uploaderId: userId,
@@ -44,7 +45,16 @@ export function createPrismaFileRepository(database: PrismaClient): FileReposito
               checksum: upload.checksum,
               status: FileStatus.READY,
             },
-          }));
+          });
+          files.push(file);
+          await recordAuditEvent(transaction, {
+            projectId,
+            actorId: userId,
+            type: AuditEventType.FILE_UPLOADED,
+            entityType: 'File',
+            entityId: file.id,
+            metadata: { mimeType: file.mimeType, size: file.size },
+          });
         }
         return files.map(toView);
       });

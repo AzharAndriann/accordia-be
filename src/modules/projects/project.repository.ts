@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client';
-import { ProjectRole } from '../../generated/prisma/enums';
+import { AuditEventType, ProjectRole } from '../../generated/prisma/enums';
+import { recordAuditEvent } from '../events/event.audit';
 import type { CreateProjectInput } from './project.schema';
 import type { ProjectPage, ProjectSummary } from './project.types';
 
@@ -30,6 +31,14 @@ export function createPrismaProjectRepository(
             userId,
             role: ProjectRole.FREELANCER,
           },
+        });
+
+        await recordAuditEvent(transaction, {
+          projectId: project.id,
+          actorId: userId,
+          type: AuditEventType.PROJECT_CREATED,
+          entityType: 'Project',
+          entityId: project.id,
         });
 
         return { ...project, role: ProjectRole.FREELANCER };

@@ -333,6 +333,15 @@ const paymentSummaryResponse = {
   },
 };
 
+const auditEventResponse = {
+  type: 'object', required: ['id', 'projectId', 'actorId', 'actorName', 'type', 'entityType', 'entityId', 'metadata', 'serverTime'],
+  properties: {
+    id: { type: 'string', format: 'uuid' }, projectId: { type: 'string', format: 'uuid' }, actorId: { type: 'string', format: 'uuid' },
+    actorName: { type: 'string' }, type: { type: 'string' }, entityType: { type: 'string' }, entityId: { type: 'string', format: 'uuid' },
+    metadata: { type: 'object', additionalProperties: true }, serverTime: { type: 'string', format: 'date-time' },
+  },
+};
+
 export const openApiDocument = {
   openapi: '3.0.3',
   info: { title: 'Accordia API', version: '0.1.0' },
@@ -351,6 +360,7 @@ export const openApiDocument = {
       Delivery: deliveryResponse,
       Payment: paymentResponse,
       PaymentSummary: paymentSummaryResponse,
+      AuditEvent: auditEventResponse,
     },
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -1161,6 +1171,25 @@ export const openApiDocument = {
           '404': { description: 'Pembayaran tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
           '409': { description: 'Status pembayaran konflik', content: { 'application/json': { schema: errorResponse } } },
           '422': { description: 'Alasan tidak valid', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/projects/{projectId}/events': {
+      get: {
+        operationId: 'listProjectEvents', tags: ['Events'], security: [{ bearerAuth: [] }],
+        summary: 'Menampilkan timeline audit proyek',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': { description: 'Timeline audit append-only', content: { 'application/json': { schema: { type: 'object', required: ['data', 'nextCursor'], properties: {
+            data: { type: 'array', items: auditEventResponse }, nextCursor: { type: 'string', format: 'uuid', nullable: true },
+          } } } } },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan atau bukan anggota', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Pagination tidak valid', content: { 'application/json': { schema: errorResponse } } },
         },
       },
     },

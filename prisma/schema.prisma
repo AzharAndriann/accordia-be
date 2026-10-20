@@ -27,6 +27,7 @@ model User {
   requestedRevisions       RevisionRequest[] @relation("RevisionRequester")
   submittedPayments        Payment[] @relation("PaymentSubmitter")
   reviewedPayments         Payment[] @relation("PaymentReviewer")
+  auditEvents              AuditEvent[] @relation("AuditActor")
 }
 
 enum ProjectStatus {
@@ -60,6 +61,7 @@ model Project {
   files                    File[]
   deliveries               Delivery[]
   payments                 Payment[]
+  auditEvents              AuditEvent[]
 
   @@index([creatorId])
   @@index([createdAt, id])
@@ -269,6 +271,43 @@ model PaymentFile {
   file      File    @relation(fields: [fileId], references: [id], onDelete: Restrict)
 
   @@id([paymentId, fileId])
+}
+
+enum AuditEventType {
+  PROJECT_CREATED
+  INVITATION_CREATED
+  INVITATION_ACCEPTED
+  AGREEMENT_DRAFT_CREATED
+  AGREEMENT_UPDATED
+  AGREEMENT_SUBMITTED
+  AGREEMENT_APPROVED
+  AGREEMENT_ACCEPTED
+  AGREEMENT_REJECTED
+  CHANGE_REQUEST_CREATED
+  CHANGE_REQUEST_PROPOSED
+  FILE_UPLOADED
+  DELIVERY_SUBMITTED
+  DELIVERY_ACCEPTED
+  REVISION_REQUESTED
+  PAYMENT_SUBMITTED
+  PAYMENT_CONFIRMED
+  PAYMENT_REJECTED
+}
+
+model AuditEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  projectId  String         @db.Uuid
+  actorId    String         @db.Uuid
+  type       AuditEventType
+  entityType String         @db.VarChar(40)
+  entityId   String         @db.Uuid
+  metadata   Json           @default("{}")
+  serverTime DateTime       @default(now())
+  project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor      User           @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, serverTime, id])
+  @@index([actorId])
 }
 
 model AgreementApproval {

@@ -2,6 +2,7 @@ import type { AgreementVersion, PrismaClient } from '../../generated/prisma/clie
 import { Prisma } from '../../generated/prisma/client';
 import {
   AgreementStatus,
+  AuditEventType,
   ChangeRequestStatus,
   ProjectRole,
   ProjectStatus,
@@ -21,6 +22,7 @@ import type {
   AgreementVersionView,
   EditableAgreementContext,
 } from './agreement.types';
+import { recordAuditEvent } from '../events/event.audit';
 
 type AgreementWithCount = AgreementVersion & {
   _count?: { approvals: number };
@@ -68,6 +70,8 @@ export interface AgreementRepository {
   findEditable(versionId: string, userId: string): Promise<EditableAgreementContext | null>;
   updateDraft(input: {
     versionId: string;
+    projectId: string;
+    userId: string;
     expectedUpdatedAt: Date;
     changes: UpdateAgreementInput;
     contentHash: string;
@@ -201,6 +205,25 @@ export function createPrismaAgreementRepository(
                   }
                 }
 
+                await recordAuditEvent(transaction, {
+                  projectId: input.projectId,
+                  actorId: input.userId,
+                  type: AuditEventType.AGREEMENT_DRAFT_CREATED,
+                  entityType: 'AgreementVersion',
+                  entityId: version.id,
+                  metadata: { versionNumber: version.versionNumber },
+                });
+                if (input.changeRequestId) {
+                  await recordAuditEvent(transaction, {
+                    projectId: input.projectId,
+                    actorId: input.userId,
+                    type: AuditEventType.CHANGE_REQUEST_PROPOSED,
+                    entityType: 'ChangeRequest',
+                    entityId: input.changeRequestId,
+                    metadata: { proposedVersionId: version.id },
+                  });
+                }
+
                 return toAgreementView(version);
               },
               { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -285,28 +308,32 @@ export function createPrismaAgreementRepository(
           : {}),
         contentHash: input.contentHash,
       };
-      const updated = await database.agreementVersion.updateMany({
-        where: {
-          id: input.versionId,
-          status: AgreementStatus.DRAFT,
-          updatedAt: input.expectedUpdatedAt,
-        },
-        data,
-      });
+      return database.$transaction(async (transaction) => {
+        const updated = await transaction.agreementVersion.updateMany({
+          where: {
+            id: input.versionId,
+            status: AgreementStatus.DRAFT,
+            updatedAt: input.expectedUpdatedAt,
+          },
+          data,
+        });
 
-      if (updated.count !== 1) {
-        throw new AppError(
-          409,
-          'VERSION_CONFLICT',
-          'Versi kesepakatan telah berubah',
-        );
-      }
-
-      const version = await database.agreementVersion.findUniqueOrThrow({
-        where: { id: input.versionId },
-        include: { _count: { select: { approvals: true } } },
+        if (updated.count !== 1) {
+          throw new AppError(409, 'VERSION_CONFLICT', 'Versi kesepakatan telah berubah');
+        }
+        await recordAuditEvent(transaction, {
+          projectId: input.projectId,
+          actorId: input.userId,
+          type: AuditEventType.AGREEMENT_UPDATED,
+          entityType: 'AgreementVersion',
+          entityId: input.versionId,
+        });
+        const version = await transaction.agreementVersion.findUniqueOrThrow({
+          where: { id: input.versionId },
+          include: { _count: { select: { approvals: true } } },
+        });
+        return toAgreementView(version);
       });
-      return toAgreementView(version);
     },
 
     async submit(input) {
@@ -385,6 +412,15 @@ export function createPrismaAgreementRepository(
                   'Versi kesepakatan telah berubah',
                 );
               }
+
+              await recordAuditEvent(transaction, {
+                projectId: version.projectId,
+                actorId: input.userId,
+                type: AuditEventType.AGREEMENT_SUBMITTED,
+                entityType: 'AgreementVersion',
+                entityId: version.id,
+                metadata: { contentHash: version.contentHash },
+              });
 
               const result = await transaction.agreementVersion.findUniqueOrThrow({
                 where: { id: version.id },
@@ -469,6 +505,14 @@ export function createPrismaAgreementRepository(
                   approvedAt: input.now,
                 },
               });
+              await recordAuditEvent(transaction, {
+                projectId: version.projectId,
+                actorId: input.userId,
+                type: AuditEventType.AGREEMENT_APPROVED,
+                entityType: 'AgreementVersion',
+                entityId: version.id,
+                metadata: { contentHash: version.contentHash },
+              });
             }
 
             const approvalCount = version.approvals.length + (alreadyApproved ? 0 : 1);
@@ -500,6 +544,13 @@ export function createPrismaAgreementRepository(
               await transaction.changeRequest.updateMany({
                 where: { proposedVersionId: version.id },
                 data: { status: ChangeRequestStatus.ACCEPTED },
+              });
+              await recordAuditEvent(transaction, {
+                projectId: version.projectId,
+                actorId: input.userId,
+                type: AuditEventType.AGREEMENT_ACCEPTED,
+                entityType: 'AgreementVersion',
+                entityId: version.id,
               });
             }
 
@@ -559,6 +610,13 @@ export function createPrismaAgreementRepository(
             await transaction.changeRequest.updateMany({
               where: { proposedVersionId: version.id },
               data: { status: ChangeRequestStatus.REJECTED },
+            });
+            await recordAuditEvent(transaction, {
+              projectId: version.projectId,
+              actorId: input.userId,
+              type: AuditEventType.AGREEMENT_REJECTED,
+              entityType: 'AgreementVersion',
+              entityId: version.id,
             });
 
             const result = await transaction.agreementVersion.findUniqueOrThrow({
