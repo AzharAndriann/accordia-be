@@ -1,6 +1,7 @@
 import { Router } from 'express';
+import { UserRole } from '../../generated/prisma/enums';
 import { prisma } from '../../lib/prisma';
-import { authenticate } from '../auth/auth.middleware';
+import { authenticate, requireUserRole } from '../auth/auth.middleware';
 import { createPrismaProjectRepository } from './project.repository';
 import { createProjectSchema, listProjectsQuerySchema } from './project.schema';
 import { createProjectService, type ProjectService } from './project.service';
@@ -25,11 +26,15 @@ export function createProjectRouter(
     response.json(result);
   });
 
-  router.post('/', async (request, response) => {
-    const input = createProjectSchema.parse(request.body);
-    const project = await projectService.create(request.auth!.userId, input);
-    response.status(201).json({ data: project });
-  });
+  router.post(
+    '/',
+    requireUserRole(UserRole.FREELANCER),
+    async (request, response) => {
+      const input = createProjectSchema.parse(request.body);
+      const project = await projectService.create(request.auth!.userId, input);
+      response.status(201).json({ data: project });
+    },
+  );
 
   return router;
 }

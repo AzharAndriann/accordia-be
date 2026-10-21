@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { UserRole } from '../../generated/prisma/enums';
 import { env } from '../../config/env';
 import type {
   AuthRepository,
@@ -24,6 +25,7 @@ function createMemoryRepository() {
         id: randomUUID(),
         email: input.email,
         name: input.name,
+        role: input.role,
         passwordHash: input.passwordHash,
         emailVerifiedAt: null,
         createdAt: new Date('2026-10-19T00:00:00.000Z'),
@@ -49,11 +51,13 @@ describe('auth schema', () => {
     const result = registerSchema.parse({
       name: '  Budi Santoso  ',
       email: '  BUDI@Example.COM ',
+      role: UserRole.FREELANCER,
       password: 'password-yang-kuat',
     });
 
     expect(result.name).toBe('Budi Santoso');
     expect(result.email).toBe('budi@example.com');
+    expect(result.role).toBe(UserRole.FREELANCER);
   });
 
   test('menolak password register yang terlalu pendek', () => {
@@ -61,7 +65,19 @@ describe('auth schema', () => {
       registerSchema.parse({
         name: 'Budi Santoso',
         email: 'budi@example.com',
+        role: UserRole.CLIENT,
         password: 'pendek',
+      }),
+    ).toThrow();
+  });
+
+  test('menolak role akun yang tidak dikenal', () => {
+    expect(() =>
+      registerSchema.parse({
+        name: 'Budi Santoso',
+        email: 'budi@example.com',
+        role: 'ADMIN',
+        password: 'password-yang-kuat',
       }),
     ).toThrow();
   });
@@ -76,6 +92,7 @@ describe('auth service', () => {
     const result = await service.register({
       name: 'Budi Santoso',
       email: 'budi@example.com',
+      role: UserRole.FREELANCER,
       password,
     });
     const storedUser = memory.getUser();
@@ -86,6 +103,7 @@ describe('auth service', () => {
     expect(memory.sessions).toHaveLength(1);
     expect(memory.sessions[0]?.refreshTokenHash).toHaveLength(64);
     expect(result).not.toHaveProperty('passwordHash');
+    expect(result.user.role).toBe(UserRole.FREELANCER);
     expect(result.refreshToken).not.toBe(memory.sessions[0]?.refreshTokenHash);
   });
 
@@ -97,6 +115,7 @@ describe('auth service', () => {
     await service.register({
       name: 'Budi Santoso',
       email: 'budi@example.com',
+      role: UserRole.CLIENT,
       password,
     });
     const result = await service.login(

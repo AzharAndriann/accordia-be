@@ -2,7 +2,12 @@ import { describe, expect, mock, test } from 'bun:test';
 import type { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../../shared/errors';
-import { createAuthenticateMiddleware, type SessionStore } from './auth.middleware';
+import { UserRole } from '../../generated/prisma/enums';
+import {
+  createAuthenticateMiddleware,
+  requireUserRole,
+  type SessionStore,
+} from './auth.middleware';
 import { signAccessToken } from './auth.tokens';
 
 function createRequest(token?: string) {
@@ -23,7 +28,7 @@ describe('authenticate middleware', () => {
     const database: SessionStore = {
       session: {
         async findFirst() {
-          return { id: sessionId };
+          return { id: sessionId, user: { role: UserRole.FREELANCER } };
         },
       },
     };
@@ -35,8 +40,34 @@ describe('authenticate middleware', () => {
       next as unknown as NextFunction,
     );
 
-    expect(request.auth).toEqual({ userId, sessionId });
+    expect(request.auth).toEqual({
+      userId,
+      sessionId,
+      role: UserRole.FREELANCER,
+    });
     expect(next).toHaveBeenCalledWith();
+  });
+
+  test('membatasi endpoint berdasarkan role akun', () => {
+    const request = {
+      auth: {
+        userId: randomUUID(),
+        sessionId: randomUUID(),
+        role: UserRole.CLIENT,
+      },
+    } as Request;
+    const next = mock((_error?: unknown) => undefined);
+
+    requireUserRole(UserRole.FREELANCER)(
+      request,
+      {} as Response,
+      next as unknown as NextFunction,
+    );
+
+    expect(next.mock.calls[0]?.[0]).toMatchObject({
+      status: 403,
+      code: 'ROLE_FORBIDDEN',
+    });
   });
 
   test('menolak token ketika session tidak aktif', async () => {

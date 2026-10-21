@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UserRole } from '../../generated/prisma/enums';
 
 const emailSchema = z
   .string()
@@ -21,6 +22,7 @@ export const registerSchema = z
       .min(2, 'Nama minimal 2 karakter')
       .max(100, 'Nama maksimal 100 karakter'),
     email: emailSchema,
+    role: z.enum(UserRole),
     password: passwordSchema,
   })
   .strict();

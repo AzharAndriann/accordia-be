@@ -57,7 +57,7 @@ Contoh register:
 ```bash
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Budi Santoso","email":"budi@example.com","password":"password-yang-kuat"}'
+  -d '{"name":"Budi Santoso","email":"budi@example.com","role":"FREELANCER","password":"password-yang-kuat"}'
 ```
 
 Contoh login:

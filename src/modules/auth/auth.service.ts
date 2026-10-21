@@ -21,6 +21,7 @@ function toPublicUser(user: AuthUserRecord): PublicUser {
     id: user.id,
     email: user.email,
     name: user.name,
+    role: user.role,
     emailVerifiedAt: user.emailVerifiedAt,
     createdAt: user.createdAt,
   };
@@ -62,6 +63,7 @@ export function createAuthService(repository: AuthRepository) {
         const user = await repository.createUserWithSession({
           name: input.name,
           email: input.email,
+          role: input.role,
           passwordHash,
           session: tokenData.session,
         });

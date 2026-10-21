@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
+import { UserRole } from '../../generated/prisma/enums';
 import { prisma } from '../../lib/prisma';
-import { authenticate } from '../auth/auth.middleware';
+import { authenticate, requireUserRole } from '../auth/auth.middleware';
 import { createPrismaInvitationRepository } from './invitation.repository';
 import {
   acceptInvitationSchema,
@@ -53,6 +54,7 @@ export function createInvitationRouter(
   router.post(
     '/projects/:projectId/invitations',
     createLimiter,
+    requireUserRole(UserRole.FREELANCER),
     async (request, response) => {
       const { projectId } = invitationProjectParamsSchema.parse(request.params);
       const input = createInvitationSchema.parse(request.body);
@@ -68,6 +70,7 @@ export function createInvitationRouter(
   router.post(
     '/invitations/accept',
     acceptLimiter,
+    requireUserRole(UserRole.CLIENT),
     async (request, response) => {
       const input = acceptInvitationSchema.parse(request.body);
       const membership = await invitationService.accept(

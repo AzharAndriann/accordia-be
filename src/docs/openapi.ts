@@ -27,11 +27,12 @@ const errorResponse = {
 
 const userResponse = {
   type: 'object',
-  required: ['id', 'email', 'name', 'emailVerifiedAt', 'createdAt'],
+  required: ['id', 'email', 'name', 'role', 'emailVerifiedAt', 'createdAt'],
   properties: {
     id: { type: 'string', format: 'uuid' },
     email: { type: 'string', format: 'email' },
     name: { type: 'string' },
+    role: { type: 'string', enum: ['FREELANCER', 'CLIENT'] },
     emailVerifiedAt: { type: 'string', format: 'date-time', nullable: true },
     createdAt: { type: 'string', format: 'date-time' },
   },
@@ -429,16 +430,18 @@ export const openApiDocument = {
               schema: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['name', 'email', 'password'],
+                required: ['name', 'email', 'role', 'password'],
                 properties: {
                   name: { type: 'string', minLength: 2, maxLength: 100 },
                   email: { type: 'string', format: 'email', maxLength: 254 },
+                  role: { type: 'string', enum: ['FREELANCER', 'CLIENT'] },
                   password: { type: 'string', minLength: 12, maxLength: 128 },
                 },
               },
               example: {
                 name: 'Budi Santoso',
                 email: 'budi@example.com',
+                role: 'FREELANCER',
                 password: 'contoh-password-kuat',
               },
             },
@@ -602,6 +605,10 @@ export const openApiDocument = {
             description: 'Sesi tidak valid',
             content: { 'application/json': { schema: errorResponse } },
           },
+          '403': {
+            description: 'Hanya akun freelancer yang dapat membuat proyek',
+            content: { 'application/json': { schema: errorResponse } },
+          },
           '422': {
             description: 'Input tidak valid',
             content: { 'application/json': { schema: errorResponse } },
@@ -720,7 +727,7 @@ export const openApiDocument = {
             content: { 'application/json': { schema: errorResponse } },
           },
           '403': {
-            description: 'Email belum diverifikasi atau tidak sesuai',
+            description: 'Harus akun client, email terverifikasi, dan sesuai',
             content: { 'application/json': { schema: errorResponse } },
           },
           '404': {

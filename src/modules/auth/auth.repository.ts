@@ -2,7 +2,13 @@ import type { PrismaClient, User } from '../../generated/prisma/client';
 
 export type AuthUserRecord = Pick<
   User,
-  'id' | 'email' | 'name' | 'passwordHash' | 'emailVerifiedAt' | 'createdAt'
+  | 'id'
+  | 'email'
+  | 'name'
+  | 'role'
+  | 'passwordHash'
+  | 'emailVerifiedAt'
+  | 'createdAt'
 >;
 
 export type NewSession = {
@@ -17,6 +23,7 @@ export interface AuthRepository {
   createUserWithSession(input: {
     name: string;
     email: string;
+    role: User['role'];
     passwordHash: string;
     session: NewSession;
   }): Promise<AuthUserRecord>;
@@ -35,6 +42,7 @@ export function createPrismaAuthRepository(database: PrismaClient): AuthReposito
           data: {
             name: input.name,
             email: input.email,
+            role: input.role,
             passwordHash: input.passwordHash,
           },
         });

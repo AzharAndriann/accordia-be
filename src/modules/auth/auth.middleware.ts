@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import type { UserRole } from '../../generated/prisma/enums';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../shared/errors';
 import { verifyAccessToken } from './auth.tokens';
@@ -12,8 +13,8 @@ export type SessionStore = {
         revokedAt: null;
         expiresAt: { gt: Date };
       };
-      select: { id: true };
-    }): Promise<{ id: string } | null>;
+      select: { id: true; user: { select: { role: true } } };
+    }): Promise<{ id: string; user: { role: UserRole } } | null>;
   };
 };
 
@@ -49,14 +50,14 @@ export function createAuthenticateMiddleware(
           revokedAt: null,
           expiresAt: { gt: new Date() },
         },
-        select: { id: true },
+        select: { id: true, user: { select: { role: true } } },
       });
 
       if (!session) {
         throw new AppError(401, 'UNAUTHENTICATED', 'Sesi tidak valid');
       }
 
-      request.auth = identity;
+      request.auth = { ...identity, role: session.user.role };
       next();
     } catch (error) {
       next(error);
@@ -65,3 +66,20 @@ export function createAuthenticateMiddleware(
 }
 
 export const authenticate = createAuthenticateMiddleware();
+
+export function requireUserRole(role: UserRole): RequestHandler {
+  return (request, _response, next) => {
+    if (request.auth?.role !== role) {
+      next(
+        new AppError(
+          403,
+          'ROLE_FORBIDDEN',
+          `Fitur ini hanya tersedia untuk ${role.toLowerCase()}`,
+        ),
+      );
+      return;
+    }
+
+    next();
+  };
+}
