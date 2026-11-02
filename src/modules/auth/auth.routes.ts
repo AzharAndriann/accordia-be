@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { prisma } from '../../lib/prisma';
 import { createPrismaAuthRepository } from './auth.repository';
-import { loginSchema, registerSchema } from './auth.schema';
+import { loginSchema, refreshSessionSchema, registerSchema } from './auth.schema';
 import { createAuthService, type AuthService } from './auth.service';
 
 const rateLimitResponse = {
@@ -44,6 +44,14 @@ const loginAccountLimiter = rateLimit({
   message: rateLimitResponse,
 });
 
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: rateLimitResponse,
+});
+
 const defaultAuthService = createAuthService(createPrismaAuthRepository(prisma));
 
 export function createAuthRouter(authService: AuthService = defaultAuthService) {
@@ -70,6 +78,12 @@ export function createAuthRouter(authService: AuthService = defaultAuthService) 
       response.json({ data: result });
     },
   );
+
+  router.post('/refresh', refreshLimiter, async (request, response) => {
+    const input = refreshSessionSchema.parse(request.body);
+    const result = await authService.refresh(input);
+    response.json({ data: result });
+  });
 
   return router;
 }

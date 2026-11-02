@@ -3,6 +3,7 @@ import { AppError } from '../../shared/errors';
 import type {
   AcceptInvitationInput,
   CreateInvitationInput,
+  ListInvitationsQuery,
 } from './invitation.schema';
 import type { InvitationRepository } from './invitation.repository';
 import { createInvitationToken, hashInvitationToken } from './invitation.tokens';
@@ -68,6 +69,58 @@ export function createInvitationService(repository: InvitationRepository) {
         tokenHash: hashInvitationToken(input.token),
         now,
       });
+    },
+
+    list(userId: string, query: ListInvitationsQuery, now = new Date()) {
+      return repository.listPending({ userId, ...query, now });
+    },
+
+    listByProject(
+      inviterId: string,
+      projectId: string,
+      query: ListInvitationsQuery,
+      now = new Date(),
+    ) {
+      return repository.listByProject({ inviterId, projectId, ...query, now });
+    },
+
+    cancel(
+      inviterId: string,
+      projectId: string,
+      invitationId: string,
+      now = new Date(),
+    ) {
+      return repository.cancel({ inviterId, projectId, invitationId, now });
+    },
+
+    requestRemoval(
+      inviterId: string,
+      projectId: string,
+      invitationId: string,
+      now = new Date(),
+    ) {
+      return repository.requestRemoval({ inviterId, projectId, invitationId, now });
+    },
+
+    listRemovalRequests(userId: string, query: ListInvitationsQuery) {
+      return repository.listRemovalRequests({ userId, ...query });
+    },
+
+    respondRemoval(
+      userId: string,
+      invitationId: string,
+      decision: 'APPROVED' | 'REJECTED',
+      now = new Date(),
+    ) {
+      return repository.respondRemoval({ userId, invitationId, decision, now });
+    },
+
+    acceptById(
+      userId: string,
+      invitationId: string,
+      now = new Date(),
+    ): Promise<AcceptedInvitation> {
+      return repository.accept({ userId, invitationId, now });
     },
   };
 }

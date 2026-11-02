@@ -34,5 +34,12 @@ export const loginSchema = z
   })
   .strict();
 
+export const refreshSessionSchema = z
+  .object({
+    refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Refresh token tidak valid'),
+  })
+  .strict();
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type RefreshSessionInput = z.infer<typeof refreshSessionSchema>;

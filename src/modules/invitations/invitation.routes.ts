@@ -7,7 +7,9 @@ import { createPrismaInvitationRepository } from './invitation.repository';
 import {
   acceptInvitationSchema,
   createInvitationSchema,
+  invitationParamsSchema,
   invitationProjectParamsSchema,
+  listInvitationsQuerySchema,
 } from './invitation.schema';
 import {
   createInvitationService,
@@ -64,6 +66,108 @@ export function createInvitationRouter(
         input,
       );
       response.status(201).json({ data: invitation });
+    },
+  );
+
+  router.get(
+    '/projects/:projectId/invitations',
+    requireUserRole(UserRole.FREELANCER),
+    async (request, response) => {
+      const { projectId } = invitationProjectParamsSchema.parse(request.params);
+      const query = listInvitationsQuerySchema.parse(request.query);
+      response.json(
+        await invitationService.listByProject(request.auth!.userId, projectId, query),
+      );
+    },
+  );
+
+  router.delete(
+    '/projects/:projectId/invitations/:invitationId',
+    requireUserRole(UserRole.FREELANCER),
+    async (request, response) => {
+      const { projectId } = invitationProjectParamsSchema.parse(request.params);
+      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const invitation = await invitationService.cancel(
+        request.auth!.userId,
+        projectId,
+        invitationId,
+      );
+      response.json({ data: invitation });
+    },
+  );
+
+  router.post(
+    '/projects/:projectId/invitations/:invitationId/removal-request',
+    requireUserRole(UserRole.FREELANCER),
+    async (request, response) => {
+      const { projectId } = invitationProjectParamsSchema.parse(request.params);
+      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const removal = await invitationService.requestRemoval(
+        request.auth!.userId,
+        projectId,
+        invitationId,
+      );
+      response.status(201).json({ data: removal });
+    },
+  );
+
+  router.get(
+    '/membership-removal-requests',
+    requireUserRole(UserRole.CLIENT),
+    async (request, response) => {
+      const query = listInvitationsQuerySchema.parse(request.query);
+      response.json(await invitationService.listRemovalRequests(request.auth!.userId, query));
+    },
+  );
+
+  router.post(
+    '/membership-removal-requests/:invitationId/approve',
+    requireUserRole(UserRole.CLIENT),
+    async (request, response) => {
+      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const result = await invitationService.respondRemoval(
+        request.auth!.userId,
+        invitationId,
+        'APPROVED',
+      );
+      response.json({ data: result });
+    },
+  );
+
+  router.post(
+    '/membership-removal-requests/:invitationId/reject',
+    requireUserRole(UserRole.CLIENT),
+    async (request, response) => {
+      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const result = await invitationService.respondRemoval(
+        request.auth!.userId,
+        invitationId,
+        'REJECTED',
+      );
+      response.json({ data: result });
+    },
+  );
+
+  router.get(
+    '/invitations',
+    requireUserRole(UserRole.CLIENT),
+    async (request, response) => {
+      const query = listInvitationsQuerySchema.parse(request.query);
+      response.json(await invitationService.list(request.auth!.userId, query));
+    },
+  );
+
+  router.post(
+    '/invitations/:invitationId/accept',
+    acceptLimiter,
+    requireUserRole(UserRole.CLIENT),
+    async (request, response) => {
+      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const membership = await invitationService.acceptById(
+        request.auth!.userId,
+        invitationId,
+      );
+      response.json({ data: membership });
     },
   );
 

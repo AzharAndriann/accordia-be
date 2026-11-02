@@ -12,7 +12,10 @@ export type SessionTokenData = {
   refreshToken: string;
 };
 
-export function createSessionTokenData(now = new Date()): SessionTokenData {
+export function createSessionTokenData(
+  now = new Date(),
+  tokenFamilyId = randomUUID(),
+): SessionTokenData {
   const refreshToken = randomBytes(32).toString('base64url');
   const expiresAt = new Date(now);
   expiresAt.setUTCDate(expiresAt.getUTCDate() + env.REFRESH_TOKEN_TTL_DAYS);
@@ -21,7 +24,7 @@ export function createSessionTokenData(now = new Date()): SessionTokenData {
     session: {
       id: randomUUID(),
       refreshTokenHash: hashRefreshToken(refreshToken),
-      tokenFamilyId: randomUUID(),
+      tokenFamilyId,
       expiresAt,
     },
     refreshToken,

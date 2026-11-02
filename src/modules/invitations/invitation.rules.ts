@@ -4,6 +4,7 @@ export type InvitationAcceptanceContext = {
   invitation: {
     targetEmail: string;
     acceptedAt: Date | null;
+    cancelledAt: Date | null;
     expiresAt: Date;
     project: {
       creatorId: string;
@@ -29,13 +30,6 @@ export function assertInvitationCanBeAccepted(
   if (!invitation || !user) {
     throw new AppError(404, 'INVITATION_NOT_FOUND', 'Undangan tidak ditemukan');
   }
-  if (!user.emailVerifiedAt) {
-    throw new AppError(
-      403,
-      'EMAIL_NOT_VERIFIED',
-      'Email harus diverifikasi sebelum menerima undangan',
-    );
-  }
   if (user.email !== invitation.targetEmail) {
     throw new AppError(
       403,
@@ -45,6 +39,9 @@ export function assertInvitationCanBeAccepted(
   }
   if (invitation.acceptedAt) {
     throw new AppError(409, 'INVITATION_ALREADY_USED', 'Undangan sudah digunakan');
+  }
+  if (invitation.cancelledAt) {
+    throw new AppError(409, 'INVITATION_CANCELLED', 'Undangan sudah dibatalkan');
   }
   if (invitation.expiresAt <= now) {
     throw new AppError(409, 'INVITATION_EXPIRED', 'Undangan sudah kedaluwarsa');

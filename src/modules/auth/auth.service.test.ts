@@ -37,6 +37,19 @@ function createMemoryRepository() {
     async createSession(userId, session) {
       sessions.push({ ...session, userId });
     },
+
+    async rotateSession(input) {
+      const current = sessions.find(
+        (session) => session.refreshTokenHash === input.refreshTokenHash,
+      );
+      if (!current || !user || current.expiresAt <= input.now) return null;
+      sessions.push({
+        ...input.nextSession,
+        tokenFamilyId: current.tokenFamilyId,
+        userId: current.userId,
+      });
+      return user;
+    },
   };
 
   return {
@@ -150,5 +163,23 @@ describe('auth service', () => {
       code: 'INVALID_CREDENTIALS',
       message: 'Email atau password salah',
     });
+  });
+
+  test('refresh merotasi token dan menerbitkan access token baru', async () => {
+    const memory = createMemoryRepository();
+    const service = createAuthService(memory.repository);
+    const registered = await service.register({
+      name: 'Budi Santoso',
+      email: 'budi@example.com',
+      role: UserRole.CLIENT,
+      password: 'password-yang-kuat',
+    });
+
+    const refreshed = await service.refresh({ refreshToken: registered.refreshToken });
+
+    expect(memory.sessions).toHaveLength(2);
+    expect(refreshed.refreshToken).not.toBe(registered.refreshToken);
+    expect(refreshed.accessToken).not.toBe(registered.accessToken);
+    expect(memory.sessions[1]?.tokenFamilyId).toBe(memory.sessions[0]?.tokenFamilyId);
   });
 });

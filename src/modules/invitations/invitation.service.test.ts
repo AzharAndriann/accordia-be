@@ -16,6 +16,7 @@ const now = new Date('2026-10-19T00:00:00.000Z');
 function createRepositoryMock() {
   let createdInput: Parameters<InvitationRepository['create']>[0] | undefined;
   let acceptedInput: Parameters<InvitationRepository['accept']>[0] | undefined;
+  let cancelledInput: Parameters<InvitationRepository['cancel']>[0] | undefined;
 
   const repository: InvitationRepository = {
     async getCreationContext() {
@@ -37,6 +38,40 @@ function createRepositoryMock() {
         createdAt: now,
       };
     },
+    async listPending() {
+      return { data: [], nextCursor: null };
+    },
+    async listByProject() {
+      return { data: [], nextCursor: null };
+    },
+    async cancel(input) {
+      cancelledInput = input;
+      return {
+        id: input.invitationId,
+        projectId: input.projectId,
+        cancelledAt: input.now,
+      };
+    },
+    async requestRemoval(input) {
+      return {
+        invitationId: input.invitationId,
+        projectId: input.projectId,
+        projectTitle: 'Website',
+        freelancerName: 'Freelancer',
+        requestedAt: input.now,
+      };
+    },
+    async listRemovalRequests() {
+      return { data: [], nextCursor: null };
+    },
+    async respondRemoval(input) {
+      return {
+        invitationId: input.invitationId,
+        projectId,
+        status: input.decision,
+        respondedAt: input.now,
+      };
+    },
     async accept(input) {
       acceptedInput = input;
       return {
@@ -52,6 +87,7 @@ function createRepositoryMock() {
     repository,
     getCreatedInput: () => createdInput,
     getAcceptedInput: () => acceptedInput,
+    getCancelledInput: () => cancelledInput,
   };
 }
 
@@ -108,6 +144,35 @@ describe('invitation service', () => {
       now,
     });
   });
+
+  test('accept internal meneruskan invitation ID tanpa token', async () => {
+    const mock = createRepositoryMock();
+    const service = createInvitationService(mock.repository);
+    const invitationId = '51eea5b8-4e23-4283-a975-54884d8b7321';
+
+    await service.acceptById(clientId, invitationId, now);
+
+    expect(mock.getAcceptedInput()).toEqual({
+      userId: clientId,
+      invitationId,
+      now,
+    });
+  });
+
+  test('cancel meneruskan proyek, undangan, dan freelancer aktif', async () => {
+    const mock = createRepositoryMock();
+    const service = createInvitationService(mock.repository);
+    const invitationId = '51eea5b8-4e23-4283-a975-54884d8b7321';
+
+    await service.cancel(freelancerId, projectId, invitationId, now);
+
+    expect(mock.getCancelledInput()).toEqual({
+      inviterId: freelancerId,
+      projectId,
+      invitationId,
+      now,
+    });
+  });
 });
 
 describe('invitation acceptance rules', () => {
@@ -116,6 +181,7 @@ describe('invitation acceptance rules', () => {
       invitation: {
         targetEmail: 'client@example.com',
         acceptedAt: null,
+        cancelledAt: null,
         expiresAt: new Date('2026-10-20T00:00:00.000Z'),
         project: {
           creatorId: freelancerId,
@@ -130,20 +196,15 @@ describe('invitation acceptance rules', () => {
     };
   }
 
-  test('menerima akun terverifikasi dengan email tujuan yang sama', () => {
+  test('menerima akun dengan email tujuan yang sama', () => {
     expect(() => assertInvitationCanBeAccepted(validContext(), now)).not.toThrow();
   });
 
-  test('menolak akun yang emailnya belum diverifikasi', () => {
+  test('menerima akun yang emailnya belum diverifikasi selama alamatnya sama', () => {
     const context = validContext();
     context.user!.emailVerifiedAt = null;
 
-    expect(() => assertInvitationCanBeAccepted(context, now)).toThrow();
-    try {
-      assertInvitationCanBeAccepted(context, now);
-    } catch (error) {
-      expect(error).toMatchObject({ code: 'EMAIL_NOT_VERIFIED', status: 403 });
-    }
+    expect(() => assertInvitationCanBeAccepted(context, now)).not.toThrow();
   });
 
   test('menolak token kedaluwarsa, token terpakai, dan email berbeda', () => {

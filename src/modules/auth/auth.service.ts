@@ -1,7 +1,11 @@
 import { AppError } from '../../shared/errors';
-import type { LoginInput, RegisterInput } from './auth.schema';
+import type { LoginInput, RefreshSessionInput, RegisterInput } from './auth.schema';
 import type { AuthRepository, AuthUserRecord } from './auth.repository';
-import { createSessionTokenData, signAccessToken } from './auth.tokens';
+import {
+  createSessionTokenData,
+  hashRefreshToken,
+  signAccessToken,
+} from './auth.tokens';
 import type { AuthResult, PublicUser } from './auth.types';
 import { env } from '../../config/env';
 
@@ -92,6 +96,19 @@ export function createAuthService(repository: AuthRepository) {
       const tokenData = createSessionTokenData();
       await repository.createSession(user.id, tokenData.session);
 
+      return buildAuthResult(user, tokenData.session.id, tokenData.refreshToken);
+    },
+
+    async refresh(input: RefreshSessionInput, now = new Date()): Promise<AuthResult> {
+      const tokenData = createSessionTokenData(now);
+      const user = await repository.rotateSession({
+        refreshTokenHash: hashRefreshToken(input.refreshToken),
+        nextSession: tokenData.session,
+        now,
+      });
+      if (!user) {
+        throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Sesi telah berakhir');
+      }
       return buildAuthResult(user, tokenData.session.id, tokenData.refreshToken);
     },
   };

@@ -6,6 +6,19 @@ export const invitationProjectParamsSchema = z
   })
   .strict();
 
+export const invitationParamsSchema = z
+  .object({
+    invitationId: z.string().uuid('Invitation ID tidak valid'),
+  })
+  .strict();
+
+export const listInvitationsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().uuid('Cursor tidak valid').optional(),
+  })
+  .strict();
+
 export const createInvitationSchema = z
   .object({
     email: z
@@ -28,3 +41,4 @@ export const acceptInvitationSchema = z
 
 export type CreateInvitationInput = z.infer<typeof createInvitationSchema>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
+export type ListInvitationsQuery = z.infer<typeof listInvitationsQuerySchema>;

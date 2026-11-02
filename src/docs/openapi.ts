@@ -116,6 +116,42 @@ const acceptedInvitationResponse = {
   },
 };
 
+const pendingInvitationResponse = {
+  type: 'object',
+  required: ['id', 'projectId', 'projectTitle', 'inviterName', 'targetEmail', 'expiresAt', 'createdAt'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    projectId: { type: 'string', format: 'uuid' },
+    projectTitle: { type: 'string' },
+    inviterName: { type: 'string' },
+    targetEmail: { type: 'string', format: 'email' },
+    expiresAt: { type: 'string', format: 'date-time' },
+    createdAt: { type: 'string', format: 'date-time' },
+  },
+};
+
+const projectInvitationResponse = {
+  type: 'object',
+  required: [
+    'id', 'projectId', 'targetEmail', 'status', 'expiresAt',
+    'acceptedAt', 'cancelledAt', 'removalStatus', 'removalRequestedAt',
+    'removalRespondedAt', 'createdAt',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    projectId: { type: 'string', format: 'uuid' },
+    targetEmail: { type: 'string', format: 'email' },
+    status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REMOVAL_PENDING', 'REMOVED', 'CANCELLED', 'EXPIRED'] },
+    expiresAt: { type: 'string', format: 'date-time' },
+    acceptedAt: { type: 'string', format: 'date-time', nullable: true },
+    cancelledAt: { type: 'string', format: 'date-time', nullable: true },
+    removalStatus: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED'], nullable: true },
+    removalRequestedAt: { type: 'string', format: 'date-time', nullable: true },
+    removalRespondedAt: { type: 'string', format: 'date-time', nullable: true },
+    createdAt: { type: 'string', format: 'date-time' },
+  },
+};
+
 const agreementSnapshotRequest = {
   type: 'object',
   additionalProperties: false,
@@ -513,6 +549,28 @@ export const openApiDocument = {
         },
       },
     },
+    '/auth/refresh': {
+      post: {
+        operationId: 'refreshSession',
+        tags: ['Auth'],
+        summary: 'Memperbarui sesi dengan rotasi refresh token',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['refreshToken'],
+            properties: { refreshToken: { type: 'string', minLength: 43, maxLength: 43 } },
+          } } },
+        },
+        responses: {
+          '200': { description: 'Sesi berhasil diperbarui', content: { 'application/json': { schema: authResponse } } },
+          '401': { description: 'Refresh token tidak valid atau kedaluwarsa', content: { 'application/json': { schema: errorResponse } } },
+          '422': { description: 'Input tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '429': { description: 'Terlalu banyak percobaan', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
     '/projects': {
       get: {
         operationId: 'listProjects',
@@ -617,13 +675,40 @@ export const openApiDocument = {
       },
     },
     '/projects/{projectId}/invitations': {
+      get: {
+        operationId: 'listProjectInvitations',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Daftar seluruh undangan pada proyek',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Riwayat undangan beserta statusnya',
+            content: { 'application/json': { schema: {
+              type: 'object',
+              required: ['data', 'nextCursor'],
+              properties: {
+                data: { type: 'array', items: projectInvitationResponse },
+                nextCursor: { type: 'string', format: 'uuid', nullable: true },
+              },
+            } } },
+          },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya akun freelancer', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Proyek tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
       post: {
         operationId: 'createInvitation',
         tags: ['Invitations'],
         security: [{ bearerAuth: [] }],
         summary: 'Mengundang klien ke proyek',
         description:
-          'Token dikembalikan satu kali kepada freelancer untuk dikirim melalui kanal aman.',
+          'Undangan masuk ke inbox akun klien yang memiliki email tujuan.',
         parameters: [
           {
             name: 'projectId',
@@ -685,6 +770,151 @@ export const openApiDocument = {
             description: 'Terlalu banyak percobaan',
             content: { 'application/json': { schema: errorResponse } },
           },
+        },
+      },
+    },
+    '/projects/{projectId}/invitations/{invitationId}': {
+      delete: {
+        operationId: 'cancelProjectInvitation',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Membatalkan undangan yang masih menunggu',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'invitationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': { description: 'Undangan dibatalkan' },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya akun freelancer', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Undangan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Undangan sudah diterima, dibatalkan, atau kedaluwarsa', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/projects/{projectId}/invitations/{invitationId}/removal-request': {
+      post: {
+        operationId: 'requestClientRemoval',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Mengajukan pelepasan client dari proyek',
+        parameters: [
+          { name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'invitationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '201': { description: 'Permintaan dikirim ke client' },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya freelancer proyek', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Undangan atau client tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Status anggota atau permintaan tidak sesuai', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/membership-removal-requests': {
+      get: {
+        operationId: 'listMembershipRemovalRequests',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Daftar permintaan pelepasan untuk client',
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': { description: 'Daftar permintaan yang menunggu respons' },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya akun client', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/membership-removal-requests/{invitationId}/approve': {
+      post: {
+        operationId: 'approveMembershipRemoval',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Menyetujui pelepasan dari proyek',
+        parameters: [{ name: 'invitationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': { description: 'Client dikeluarkan dari proyek' },
+          '403': { description: 'Permintaan bukan untuk akun ini', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Permintaan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Permintaan sudah direspons', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/membership-removal-requests/{invitationId}/reject': {
+      post: {
+        operationId: 'rejectMembershipRemoval',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Menolak pelepasan dari proyek',
+        parameters: [{ name: 'invitationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': { description: 'Permintaan ditolak dan client tetap menjadi anggota' },
+          '403': { description: 'Permintaan bukan untuk akun ini', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Permintaan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Permintaan sudah direspons', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/invitations': {
+      get: {
+        operationId: 'listPendingInvitations',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Daftar undangan proyek yang menunggu respons klien',
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Inbox undangan klien',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['data', 'nextCursor'],
+                  properties: {
+                    data: { type: 'array', items: pendingInvitationResponse },
+                    nextCursor: { type: 'string', format: 'uuid', nullable: true },
+                  },
+                },
+              },
+            },
+          },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Hanya akun client', content: { 'application/json': { schema: errorResponse } } },
+        },
+      },
+    },
+    '/invitations/{invitationId}/accept': {
+      post: {
+        operationId: 'acceptInvitationById',
+        tags: ['Invitations'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Menerima undangan dari inbox klien',
+        parameters: [
+          { name: 'invitationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Undangan diterima dan pengguna menjadi klien',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['data'],
+                  properties: { data: acceptedInvitationResponse },
+                },
+              },
+            },
+          },
+          '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
+          '403': { description: 'Email akun belum terverifikasi atau tidak sesuai', content: { 'application/json': { schema: errorResponse } } },
+          '404': { description: 'Undangan tidak ditemukan', content: { 'application/json': { schema: errorResponse } } },
+          '409': { description: 'Undangan berubah, kedaluwarsa, atau proyek penuh', content: { 'application/json': { schema: errorResponse } } },
         },
       },
     },
