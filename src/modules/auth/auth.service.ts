@@ -7,6 +7,7 @@ import {
   signAccessToken,
 } from './auth.tokens';
 import type { AuthResult, PublicUser } from './auth.types';
+import { POLICY_VERSION } from './policies';
 import { env } from '../../config/env';
 
 const passwordHashOptions = {
@@ -28,6 +29,7 @@ function toPublicUser(user: AuthUserRecord): PublicUser {
     role: user.role,
     emailVerifiedAt: user.emailVerifiedAt,
     createdAt: user.createdAt,
+    needsConsent: !user.consents?.some((c) => c.termsVersion === POLICY_VERSION && c.privacyVersion === POLICY_VERSION),
   };
 }
 
@@ -69,6 +71,7 @@ export function createAuthService(repository: AuthRepository) {
           email: input.email,
           role: input.role,
           passwordHash,
+          consent: input.consent,
           session: tokenData.session,
         });
 

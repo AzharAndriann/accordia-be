@@ -6,6 +6,7 @@ import type { CreateDeliveryInput } from './delivery.schema';
 import type { DeliveryPage, DeliveryView } from './delivery.types';
 import { nextRevisionRound } from './delivery.rules';
 import { recordAuditEvent } from '../events/event.audit';
+import { loadSummary } from '../payments/payment.repository';
 
 const deliveryInclude = {
   files: { include: { file: true } },
@@ -119,18 +120,20 @@ export function createPrismaDeliveryRepository(database: PrismaClient): Delivery
       return withTransactionRetry(() => database.$transaction(async (tx) => {
         const row = await tx.delivery.findUnique({
           where: { id: input.deliveryId },
-          include: { ...deliveryInclude, project: { select: { members: { where: { userId: input.userId }, select: { role: true }, take: 1 } } } },
+          include: { ...deliveryInclude, project: { select: { status: true, members: { where: { userId: input.userId }, select: { role: true }, take: 1 } } } },
         });
         if (!row || !row.project.members[0]) throw new AppError(404, 'DELIVERY_NOT_FOUND', 'Penyerahan tidak ditemukan');
         if (row.project.members[0].role !== ProjectRole.CLIENT) throw new AppError(403, 'FORBIDDEN', 'Hanya klien yang dapat menerima hasil');
         if (row.status === DeliveryStatus.ACCEPTED) return toView(row);
+        if (row.project.status !== ProjectStatus.ACTIVE) throw new AppError(409, 'PROJECT_STATE_CONFLICT', 'Proyek tidak menerima keputusan penyerahan');
         if (row.status !== DeliveryStatus.PENDING) throw new AppError(409, 'DELIVERY_CONFLICT', 'Penyerahan tidak menunggu review');
         const updated = await tx.delivery.updateMany({
           where: { id: row.id, status: DeliveryStatus.PENDING },
           data: { status: DeliveryStatus.ACCEPTED, reviewedAt: input.now },
         });
         if (updated.count !== 1) throw new AppError(409, 'DELIVERY_CONFLICT', 'Penyerahan telah berubah');
-        await tx.project.update({ where: { id: row.projectId }, data: { status: ProjectStatus.DELIVERED } });
+        const summary = await loadSummary(tx, row.projectId);
+        await tx.project.update({ where: { id: row.projectId }, data: { status: summary.isPaid ? ProjectStatus.COMPLETED : ProjectStatus.DELIVERED } });
         await recordAuditEvent(tx, {
           projectId: row.projectId, actorId: input.userId,
           type: AuditEventType.DELIVERY_ACCEPTED, entityType: 'Delivery', entityId: row.id,
@@ -145,7 +148,7 @@ export function createPrismaDeliveryRepository(database: PrismaClient): Delivery
           where: { id: input.deliveryId },
           include: {
             project: { select: {
-              members: { where: { userId: input.userId }, select: { role: true }, take: 1 },
+              status: true, members: { where: { userId: input.userId }, select: { role: true }, take: 1 },
               activeAgreementVersion: { select: { revisionLimit: true } },
             } },
           },
@@ -153,6 +156,7 @@ export function createPrismaDeliveryRepository(database: PrismaClient): Delivery
         if (!row || !row.project.members[0]) throw new AppError(404, 'DELIVERY_NOT_FOUND', 'Penyerahan tidak ditemukan');
         if (row.project.members[0].role !== ProjectRole.CLIENT) throw new AppError(403, 'FORBIDDEN', 'Hanya klien yang dapat meminta revisi');
         if (row.status !== DeliveryStatus.PENDING) throw new AppError(409, 'DELIVERY_CONFLICT', 'Penyerahan tidak menunggu review');
+        if (row.project.status !== ProjectStatus.ACTIVE) throw new AppError(409, 'PROJECT_STATE_CONFLICT', 'Proyek tidak menerima revisi');
         const revisionLimit = row.project.activeAgreementVersion?.revisionLimit;
         if (revisionLimit === undefined) throw new AppError(409, 'AGREEMENT_REQUIRED', 'Kesepakatan aktif tidak ditemukan');
         const used = await tx.revisionRequest.count({ where: { delivery: { projectId: row.projectId } } });

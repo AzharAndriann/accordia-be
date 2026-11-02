@@ -19,7 +19,7 @@ function toView(row: PaymentRow): PaymentView {
   };
 }
 
-async function loadSummary(tx: Prisma.TransactionClient, projectId: string): Promise<PaymentSummary> {
+export async function loadSummary(tx: Prisma.TransactionClient, projectId: string): Promise<PaymentSummary> {
   const [project, confirmed] = await Promise.all([
     tx.project.findUnique({ where: { id: projectId }, select: { activeAgreementVersion: { select: { amountRupiah: true } } } }),
     tx.payment.aggregate({ where: { projectId, status: PaymentStatus.CONFIRMED }, _sum: { amountRupiah: true } }),
@@ -89,12 +89,13 @@ export function createPrismaPaymentRepository(database: PrismaClient): PaymentRe
     confirm(input) {
       return withTransactionRetry(() => database.$transaction(async (tx) => {
         const row = await tx.payment.findUnique({
-          where: { id: input.paymentId }, include: { ...paymentInclude, project: { select: { members: { where: { userId: input.userId }, select: { role: true }, take: 1 } } } },
+          where: { id: input.paymentId }, include: { ...paymentInclude, project: { select: { status: true, members: { where: { userId: input.userId }, select: { role: true }, take: 1 } } } },
         });
         if (!row || !row.project.members[0]) throw new AppError(404, 'PAYMENT_NOT_FOUND', 'Pembayaran tidak ditemukan');
         if (row.project.members[0].role !== ProjectRole.FREELANCER) throw new AppError(403, 'FORBIDDEN', 'Hanya freelancer yang dapat mengonfirmasi pembayaran');
         if (row.status === PaymentStatus.CONFIRMED) return { payment: toView(row), paymentSummary: await loadSummary(tx, row.projectId) };
         if (row.status !== PaymentStatus.PENDING) throw new AppError(409, 'PAYMENT_CONFLICT', 'Pembayaran tidak pending');
+        if (row.project.status === ProjectStatus.CANCELLED) throw new AppError(409, 'PROJECT_STATE_CONFLICT', 'Proyek telah dibatalkan');
         const updated = await tx.payment.updateMany({
           where: { id: row.id, status: PaymentStatus.PENDING },
           data: { status: PaymentStatus.CONFIRMED, reviewedById: input.userId, reviewedAt: input.now, rejectionReason: null },
@@ -118,12 +119,13 @@ export function createPrismaPaymentRepository(database: PrismaClient): PaymentRe
     reject(input) {
       return withTransactionRetry(() => database.$transaction(async (tx) => {
         const row = await tx.payment.findUnique({
-          where: { id: input.paymentId }, include: { ...paymentInclude, project: { select: { members: { where: { userId: input.userId }, select: { role: true }, take: 1 } } } },
+          where: { id: input.paymentId }, include: { ...paymentInclude, project: { select: { status: true, members: { where: { userId: input.userId }, select: { role: true }, take: 1 } } } },
         });
         if (!row || !row.project.members[0]) throw new AppError(404, 'PAYMENT_NOT_FOUND', 'Pembayaran tidak ditemukan');
         if (row.project.members[0].role !== ProjectRole.FREELANCER) throw new AppError(403, 'FORBIDDEN', 'Hanya freelancer yang dapat menolak pembayaran');
         if (row.status === PaymentStatus.REJECTED && row.reviewedById === input.userId) return { payment: toView(row), paymentSummary: await loadSummary(tx, row.projectId) };
         if (row.status !== PaymentStatus.PENDING) throw new AppError(409, 'PAYMENT_CONFLICT', 'Pembayaran tidak pending');
+        if (row.project.status === ProjectStatus.CANCELLED) throw new AppError(409, 'PROJECT_STATE_CONFLICT', 'Proyek telah dibatalkan');
         const updated = await tx.payment.updateMany({
           where: { id: row.id, status: PaymentStatus.PENDING },
           data: { status: PaymentStatus.REJECTED, reviewedById: input.userId, reviewedAt: input.now, rejectionReason: input.reason },

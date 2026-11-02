@@ -20,6 +20,7 @@ import type {
   PendingInvitationPage,
   ProjectInvitationPage,
 } from './invitation.types';
+import { queueInvitation } from '../notifications/notification.outbox';
 import { recordAuditEvent } from '../events/event.audit';
 
 type InvitationContext = {
@@ -143,6 +144,7 @@ export function createPrismaInvitationRepository(
           entityType: 'Invitation',
           entityId: invitation.id,
         });
+        await queueInvitation(transaction, invitation);
         return invitation;
       });
     },
@@ -286,6 +288,8 @@ export function createPrismaInvitationRepository(
         if (result.count !== 1) {
           throw new AppError(409, 'INVITATION_CONFLICT', 'Status undangan telah berubah');
         }
+        await recordAuditEvent(transaction, { projectId: invitation.projectId, actorId: input.inviterId,
+          type: AuditEventType.INVITATION_CANCELLED, entityType: 'Invitation', entityId: invitation.id });
         return {
           id: invitation.id,
           projectId: invitation.projectId,
@@ -351,6 +355,8 @@ export function createPrismaInvitationRepository(
             removalRespondedAt: null,
           },
         });
+        await recordAuditEvent(transaction, { projectId: invitation.projectId, actorId: input.inviterId,
+          type: AuditEventType.MEMBERSHIP_REMOVAL_REQUESTED, entityType: 'Invitation', entityId: invitation.id });
         return {
           invitationId: invitation.id,
           projectId: invitation.projectId,
@@ -445,14 +451,18 @@ export function createPrismaInvitationRepository(
             throw new AppError(409, 'CLIENT_NOT_PROJECT_MEMBER', 'Klien bukan anggota proyek');
           }
         }
-        await transaction.invitation.update({
-          where: { id: invitation.id },
+        const changed = await transaction.invitation.updateMany({
+          where: { id: invitation.id, removalStatus: MembershipRemovalStatus.PENDING },
           data: {
             acceptedById: user.id,
             removalStatus: input.decision,
             removalRespondedAt: input.now,
           },
         });
+        if (changed.count !== 1) throw new AppError(409, 'REMOVAL_REQUEST_RESOLVED', 'Permintaan sudah direspons');
+        await recordAuditEvent(transaction, { projectId: invitation.projectId, actorId: input.userId,
+          type: input.decision === 'APPROVED' ? AuditEventType.MEMBERSHIP_REMOVAL_APPROVED : AuditEventType.MEMBERSHIP_REMOVAL_REJECTED,
+          entityType: 'Invitation', entityId: invitation.id });
         return {
           invitationId: invitation.id,
           projectId: invitation.projectId,

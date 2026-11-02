@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { consentSchema } from './policies';
 import { UserRole } from '../../generated/prisma/enums';
 
 const emailSchema = z
@@ -24,6 +25,7 @@ export const registerSchema = z
     email: emailSchema,
     role: z.enum(UserRole),
     password: passwordSchema,
+    consent: consentSchema,
   })
   .strict();
 

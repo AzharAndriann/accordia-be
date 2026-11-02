@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+const consent = { acceptedTerms: true, acceptedPrivacy: true, birthDate: '2000-01-01', declaredCapacity: true, termsVersion: '2026-11-02', privacyVersion: '2026-11-02' } as const;
 import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { UserRole } from '../../generated/prisma/enums';
@@ -27,6 +28,7 @@ function createMemoryRepository() {
         name: input.name,
         role: input.role,
         passwordHash: input.passwordHash,
+        consents: [input.consent],
         emailVerifiedAt: null,
         createdAt: new Date('2026-10-19T00:00:00.000Z'),
       };
@@ -63,6 +65,7 @@ describe('auth schema', () => {
   test('menormalisasi email dan nama saat register', () => {
     const result = registerSchema.parse({
       name: '  Budi Santoso  ',
+      consent,
       email: '  BUDI@Example.COM ',
       role: UserRole.FREELANCER,
       password: 'password-yang-kuat',
@@ -77,6 +80,7 @@ describe('auth schema', () => {
     expect(() =>
       registerSchema.parse({
         name: 'Budi Santoso',
+      consent,
         email: 'budi@example.com',
         role: UserRole.CLIENT,
         password: 'pendek',
@@ -88,6 +92,7 @@ describe('auth schema', () => {
     expect(() =>
       registerSchema.parse({
         name: 'Budi Santoso',
+      consent,
         email: 'budi@example.com',
         role: 'ADMIN',
         password: 'password-yang-kuat',
@@ -104,6 +109,7 @@ describe('auth service', () => {
 
     const result = await service.register({
       name: 'Budi Santoso',
+      consent,
       email: 'budi@example.com',
       role: UserRole.FREELANCER,
       password,
@@ -127,6 +133,7 @@ describe('auth service', () => {
 
     await service.register({
       name: 'Budi Santoso',
+      consent,
       email: 'budi@example.com',
       role: UserRole.CLIENT,
       password,
@@ -170,6 +177,7 @@ describe('auth service', () => {
     const service = createAuthService(memory.repository);
     const registered = await service.register({
       name: 'Budi Santoso',
+      consent,
       email: 'budi@example.com',
       role: UserRole.CLIENT,
       password: 'password-yang-kuat',

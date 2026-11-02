@@ -453,6 +453,7 @@ export function createPrismaAgreementRepository(
                 approvals: { select: { userId: true } },
                 project: {
                   select: {
+                    status: true,
                     activeAgreementVersionId: true,
                     members: { select: { userId: true } },
                   },
@@ -476,6 +477,7 @@ export function createPrismaAgreementRepository(
               });
               return toAgreementView(accepted);
             }
+            assertProjectCanChangeAgreement(version.project.status);
             if (version.status !== AgreementStatus.PENDING) {
               throw new AppError(409, 'VERSION_CONFLICT', 'Kesepakatan tidak pending');
             }

@@ -1,3 +1,5 @@
+import { authenticate } from './auth.middleware';
+import { consentSchema, policies } from './policies';
 import { Router } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { prisma } from '../../lib/prisma';
@@ -62,7 +64,28 @@ export function createAuthRouter(authService: AuthService = defaultAuthService) 
     next();
   });
 
-  router.post('/register', registerLimiter, async (request, response) => {
+  router.get('/policies', (_request, response) => response.json({ data: policies }));
+  router.post('/consent', authenticate, async (request, response) => {
+    const input = consentSchema.parse(request.body);
+    const result = await prisma.userConsent.upsert({
+      where: { userId_termsVersion_privacyVersion: { userId: request.auth!.userId, termsVersion: input.termsVersion, privacyVersion: input.privacyVersion } },
+      create: { ...input, userId: request.auth!.userId, birthDate: new Date(`${input.birthDate}T00:00:00.000Z`) },
+      update: {},
+      select: { termsVersion: true, privacyVersion: true, acceptedAt: true },
+    });
+    response.json({ data: result });
+  });
+  router.post('/logout', authenticate, async (request, response) => {
+    await prisma.$transaction(async (tx) => {
+      const session = await tx.session.findUniqueOrThrow({ where: { id: request.auth!.sessionId }, select: { tokenFamilyId: true } });
+      const family = await tx.session.findMany({ where: { userId: request.auth!.userId, tokenFamilyId: session.tokenFamilyId }, select: { id: true } });
+      await tx.session.updateMany({ where: { userId: request.auth!.userId, tokenFamilyId: session.tokenFamilyId, revokedAt: null }, data: { revokedAt: new Date() } });
+      await tx.pushDevice.updateMany({ where: { sessionId: { in: family.map((s) => s.id) } }, data: { enabled: false } });
+    });
+    response.json({ data: { loggedOut: true } });
+  });
+
+  router.post('/register' , registerLimiter, async (request, response) => {
     const input = registerSchema.parse(request.body);
     const result = await authService.register(input);
     response.status(201).json({ data: result });

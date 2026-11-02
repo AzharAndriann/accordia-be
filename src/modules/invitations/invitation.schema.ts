@@ -12,6 +12,10 @@ export const invitationParamsSchema = z
   })
   .strict();
 
+export const projectInvitationParamsSchema = invitationProjectParamsSchema.extend({
+  invitationId: z.string().uuid(),
+});
+
 export const listInvitationsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).default(20),

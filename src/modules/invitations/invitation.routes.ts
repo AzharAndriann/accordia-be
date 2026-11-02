@@ -1,3 +1,4 @@
+import { AppError } from '../../shared/errors';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { UserRole } from '../../generated/prisma/enums';
@@ -6,6 +7,7 @@ import { authenticate, requireUserRole } from '../auth/auth.middleware';
 import { createPrismaInvitationRepository } from './invitation.repository';
 import {
   acceptInvitationSchema,
+  projectInvitationParamsSchema,
   createInvitationSchema,
   invitationParamsSchema,
   invitationProjectParamsSchema,
@@ -85,8 +87,7 @@ export function createInvitationRouter(
     '/projects/:projectId/invitations/:invitationId',
     requireUserRole(UserRole.FREELANCER),
     async (request, response) => {
-      const { projectId } = invitationProjectParamsSchema.parse(request.params);
-      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const { projectId, invitationId } = projectInvitationParamsSchema.parse(request.params);
       const invitation = await invitationService.cancel(
         request.auth!.userId,
         projectId,
@@ -100,8 +101,7 @@ export function createInvitationRouter(
     '/projects/:projectId/invitations/:invitationId/removal-request',
     requireUserRole(UserRole.FREELANCER),
     async (request, response) => {
-      const { projectId } = invitationProjectParamsSchema.parse(request.params);
-      const { invitationId } = invitationParamsSchema.parse(request.params);
+      const { projectId, invitationId } = projectInvitationParamsSchema.parse(request.params);
       const removal = await invitationService.requestRemoval(
         request.auth!.userId,
         projectId,
@@ -147,6 +147,14 @@ export function createInvitationRouter(
       response.json({ data: result });
     },
   );
+
+  router.get('/invitations/:invitationId', requireUserRole(UserRole.CLIENT), async (request, response) => {
+    const { invitationId } = invitationParamsSchema.parse(request.params);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: request.auth!.userId }, select: { email: true } });
+    const invitation = await prisma.invitation.findFirst({ where: { id: invitationId, targetEmail: user.email }, select: { id: true, projectId: true, expiresAt: true, acceptedAt: true, cancelledAt: true, project: { select: { title: true } }, inviter: { select: { name: true } } } });
+    if (!invitation) throw new AppError(404, 'INVITATION_NOT_FOUND', 'Undangan tidak ditemukan atau bukan untuk email akun ini');
+    response.json({ data: { ...invitation, expired: invitation.expiresAt <= new Date() } });
+  });
 
   router.get(
     '/invitations',

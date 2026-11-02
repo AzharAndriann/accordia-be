@@ -48,7 +48,7 @@ export function createFileStorage(uploadDirectory: string) {
       const tasks: Promise<void>[] = [];
       let parserError: Error | null = null;
 
-      const parser = Busboy({ headers: request.headers, limits: { files: MAX_FILES, fileSize: MAX_FILE_SIZE } });
+      const parser = Busboy({ headers: request.headers, limits: { files: MAX_FILES, fileSize: MAX_FILE_SIZE + 1 } });
       parser.on('file', (field, stream, info) => {
         if (field !== 'files') {
           stream.resume();
@@ -81,7 +81,7 @@ export function createFileStorage(uploadDirectory: string) {
         tasks.push((async () => {
           try {
             await pipeline(stream, observer, createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 }));
-            if (limited) throw new AppError(413, 'FILE_TOO_LARGE', 'Ukuran file maksimal 10 MiB');
+            if (limited || size > MAX_FILE_SIZE) throw new AppError(413, 'FILE_TOO_LARGE', 'Ukuran file maksimal 10 MiB');
             if (size === 0) throw new AppError(422, 'EMPTY_FILE', 'File tidak boleh kosong');
             const actualMime = detectMime(Buffer.concat(headerChunks));
             if (!MIME_TYPES.has(info.mimeType) || actualMime !== info.mimeType) {

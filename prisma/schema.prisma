@@ -20,6 +20,8 @@ model User {
   passwordHash    String
   emailVerifiedAt DateTime?
   createdAt       DateTime  @default(now())
+  consents        UserConsent[]
+  pushDevices     PushDevice[]
   sessions        Session[]
   createdProjects Project[]       @relation("ProjectCreator")
   projectMembers  ProjectMember[]
@@ -67,6 +69,7 @@ model Project {
   files                    File[]
   deliveries               Delivery[]
   payments                 Payment[]
+  requests                 ProjectRequest[]
   auditEvents              AuditEvent[]
 
   @@index([creatorId])
@@ -292,6 +295,16 @@ model PaymentFile {
 }
 
 enum AuditEventType {
+  INVITATION_CANCELLED
+  MEMBERSHIP_REMOVAL_REQUESTED
+  MEMBERSHIP_REMOVAL_APPROVED
+  MEMBERSHIP_REMOVAL_REJECTED
+  PROJECT_REQUEST_CREATED
+  PROJECT_RESOLUTION_PROPOSED
+  PROJECT_REQUEST_APPROVED
+  PROJECT_REQUEST_REJECTED
+  PROJECT_REQUEST_WITHDRAWN
+  PROJECT_CANCELLED
   PROJECT_CREATED
   INVITATION_CREATED
   INVITATION_ACCEPTED
@@ -352,4 +365,81 @@ model Session {
 
   @@index([userId, expiresAt])
   @@index([tokenFamilyId])
+}
+
+model UserConsent {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  termsVersion String @db.VarChar(40)
+  privacyVersion String @db.VarChar(40)
+  birthDate DateTime @db.Date
+  declaredCapacity Boolean
+  acceptedAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, termsVersion, privacyVersion])
+}
+
+model PushDevice {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  sessionId String @db.Uuid
+  token String @unique @db.VarChar(255)
+  platform String @db.VarChar(10)
+  enabled Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, enabled])
+  @@index([sessionId])
+}
+
+model NotificationJob {
+  id String @id @default(uuid()) @db.Uuid
+  key String @unique @db.VarChar(255)
+  channel String @db.VarChar(10)
+  recipient String @db.VarChar(255)
+  userId String? @db.Uuid
+  sessionId String? @db.Uuid
+  projectId String? @db.Uuid
+  invitationId String? @db.Uuid
+  payload Json
+  status String @default("PENDING") @db.VarChar(20)
+  attempts Int @default(0)
+  availableAt DateTime @default(now())
+  lockedAt DateTime?
+  receiptId String? @db.VarChar(255)
+  lastError String? @db.VarChar(100)
+  createdAt DateTime @default(now())
+  @@index([status, availableAt])
+}
+
+enum ProjectRequestType {
+  CANCELLATION
+  DISPUTE
+}
+
+enum ProjectRequestStatus {
+  OPEN
+  PROPOSED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+model ProjectRequest {
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  type ProjectRequestType
+  status ProjectRequestStatus @default(OPEN)
+  reason String @db.Text
+  requestedById String @db.Uuid
+  respondentId String? @db.Uuid
+  resolution String? @db.Text
+  proposedById String? @db.Uuid
+  respondedById String? @db.Uuid
+  responseReason String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  resolvedAt DateTime?
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([projectId, createdAt, id])
 }

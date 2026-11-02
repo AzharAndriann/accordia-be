@@ -1,3 +1,18 @@
+import { POLICY_VERSION } from '../modules/auth/policies';
+
+const consentRequest = {
+  type: 'object', additionalProperties: false,
+  required: ['birthDate', 'acceptedTerms', 'acceptedPrivacy', 'declaredCapacity', 'termsVersion', 'privacyVersion'],
+  properties: {
+    birthDate: { type: 'string', format: 'date' },
+    acceptedTerms: { type: 'boolean', enum: [true] },
+    acceptedPrivacy: { type: 'boolean', enum: [true] },
+    declaredCapacity: { type: 'boolean', enum: [true] },
+    termsVersion: { type: 'string', enum: [POLICY_VERSION] },
+    privacyVersion: { type: 'string', enum: [POLICY_VERSION] },
+  },
+};
+
 const statusResponse = {
   type: 'object',
   required: ['data'],
@@ -34,6 +49,7 @@ const userResponse = {
     name: { type: 'string' },
     role: { type: 'string', enum: ['FREELANCER', 'CLIENT'] },
     emailVerifiedAt: { type: 'string', format: 'date-time', nullable: true },
+    needsConsent: { type: 'boolean' },
     createdAt: { type: 'string', format: 'date-time' },
   },
 };
@@ -466,12 +482,13 @@ export const openApiDocument = {
               schema: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['name', 'email', 'role', 'password'],
+                required: ['name', 'email', 'role', 'password', 'consent'],
                 properties: {
                   name: { type: 'string', minLength: 2, maxLength: 100 },
                   email: { type: 'string', format: 'email', maxLength: 254 },
                   role: { type: 'string', enum: ['FREELANCER', 'CLIENT'] },
                   password: { type: 'string', minLength: 12, maxLength: 128 },
+                  consent: consentRequest,
                 },
               },
               example: {
@@ -479,6 +496,7 @@ export const openApiDocument = {
                 email: 'budi@example.com',
                 role: 'FREELANCER',
                 password: 'contoh-password-kuat',
+                consent: { birthDate: '2000-01-01', acceptedTerms: true, acceptedPrivacy: true, declaredCapacity: true, termsVersion: POLICY_VERSION, privacyVersion: POLICY_VERSION },
               },
             },
           },
@@ -1421,7 +1439,7 @@ export const openApiDocument = {
           { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
         ],
         responses: {
-          '200': { description: 'Timeline audit append-only', content: { 'application/json': { schema: { type: 'object', required: ['data', 'nextCursor'], properties: {
+          '200': { description: 'Timeline aktivitas proyek', content: { 'application/json': { schema: { type: 'object', required: ['data', 'nextCursor'], properties: {
             data: { type: 'array', items: auditEventResponse }, nextCursor: { type: 'string', format: 'uuid', nullable: true },
           } } } } },
           '401': { description: 'Sesi tidak valid', content: { 'application/json': { schema: errorResponse } } },
@@ -1430,5 +1448,18 @@ export const openApiDocument = {
         },
       },
     },
+    '/auth/policies': { get: { operationId: 'readPolicies', security: [], summary: 'Membaca versi dan isi kebijakan', responses: { '200': { description: 'Kebijakan saat ini' } } } },
+    '/auth/consent': { post: { operationId: 'acceptPolicies', security: [{ bearerAuth: [] }], summary: 'Mencatat persetujuan pengguna', requestBody: { required: true, content: { 'application/json': { schema: consentRequest } } }, responses: { '200': { description: 'Persetujuan dicatat' }, '401': { description: 'Sesi tidak valid' }, '422': { description: 'Usia atau persetujuan tidak valid' } } } },
+    '/auth/logout': { post: { operationId: 'logout', security: [{ bearerAuth: [] }], summary: 'Mencabut keluarga sesi perangkat dan menonaktifkan push', responses: { '200': { description: 'Sesi dicabut' }, '401': { description: 'Sesi tidak valid' } } } },
+    '/notifications/device': {
+      put: { operationId: 'registerPushDevice', security: [{ bearerAuth: [] }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['token', 'platform'], properties: { token: { type: 'string', maxLength: 255 }, platform: { type: 'string', enum: ['ios', 'android'] } } } } } }, responses: { '200': { description: 'Perangkat terdaftar' } } },
+      delete: { operationId: 'disablePushDevice', security: [{ bearerAuth: [] }], responses: { '200': { description: 'Push pada sesi dinonaktifkan' } } },
+    },
+    '/invitations/{invitationId}': { get: { operationId: 'previewInvitation', security: [{ bearerAuth: [] }], parameters: [{ name: 'invitationId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { '200': { description: 'Undangan milik email pengguna, termasuk expired' }, '404': { description: 'Undangan bukan milik pengguna' } } } },
+    '/projects/{projectId}/requests': {
+      get: { operationId: 'listProjectRequests', security: [{ bearerAuth: [] }], parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }, { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } }], responses: { '200': { description: 'data dan nextCursor permintaan' } } },
+      post: { operationId: 'createProjectRequest', security: [{ bearerAuth: [] }], parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false, required: ['type', 'reason'], properties: { type: { type: 'string', enum: ['CANCELLATION', 'DISPUTE'] }, reason: { type: 'string', minLength: 10, maxLength: 5000 } } } } } }, responses: { '201': { description: 'Permintaan dibuat' }, '409': { description: 'Konflik status atau permintaan masih terbuka' } } },
+    },
+    '/project-requests/{requestId}/respond': { post: { operationId: 'respondProjectRequest', security: [{ bearerAuth: [] }], parameters: [{ name: 'requestId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false, required: ['action', 'expectedUpdatedAt'], properties: { action: { type: 'string', enum: ['propose', 'approve', 'reject', 'withdraw'] }, reason: { type: 'string', maxLength: 5000 }, expectedUpdatedAt: { type: 'string', format: 'date-time' } } } } } }, responses: { '200': { description: 'Keputusan tercatat' }, '403': { description: 'Bukan pihak yang berhak memutuskan' }, '409': { description: 'Usulan berubah atau sudah selesai' } } } },
   },
 };

@@ -47,6 +47,13 @@ describe('system endpoints', () => {
       '/payments/{paymentId}/confirm',
       '/payments/{paymentId}/reject',
       '/projects/{projectId}/events',
+      '/auth/policies',
+      '/auth/consent',
+      '/auth/logout',
+      '/notifications/device',
+      '/invitations/{invitationId}',
+      '/projects/{projectId}/requests',
+      '/project-requests/{requestId}/respond',
     ]);
   });
 

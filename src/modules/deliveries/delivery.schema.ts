@@ -8,7 +8,7 @@ export const createDeliverySchema = z
     agreementVersionId: z.string().uuid('Agreement version ID tidak valid'),
     note: z.string().trim().max(5_000).default(''),
     fileIds: z.array(z.string().uuid()).max(5, 'Maksimal 5 file').default([]),
-    links: z.array(z.string().url().max(2_000)).max(10, 'Maksimal 10 tautan').default([]),
+    links: z.array(z.string().url().max(2_000).refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), 'Gunakan tautan http atau https')).max(10, 'Maksimal 10 tautan').default([]),
   })
   .strict()
   .refine((input) => input.fileIds.length > 0 || input.links.length > 0, 'Minimal satu file atau tautan wajib disertakan')

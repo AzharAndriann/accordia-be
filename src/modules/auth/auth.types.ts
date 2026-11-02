@@ -7,6 +7,7 @@ export type PublicUser = {
   role: UserRole;
   emailVerifiedAt: Date | null;
   createdAt: Date;
+  needsConsent: boolean;
 };
 
 export type AuthResult = {

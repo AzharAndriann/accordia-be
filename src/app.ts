@@ -1,3 +1,7 @@
+import { createProjectRequestRouter } from './modules/project-requests/project-request.routes';
+import { createNotificationRouter } from './modules/notifications/notification.routes';
+import { authenticate } from './modules/auth/auth.middleware';
+import { requireCurrentConsent } from './modules/auth/consent.middleware';
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -46,6 +50,9 @@ export function createApp(database: ReadinessDatabase = prisma) {
   });
 
   app.use('/api/v1/auth', createAuthRouter());
+  app.use('/api/v1', authenticate, requireCurrentConsent);
+  app.use('/api/v1', createNotificationRouter());
+  app.use('/api/v1', createProjectRequestRouter());
   app.use('/api/v1/projects', createProjectRouter());
   app.use('/api/v1', createInvitationRouter());
   app.use('/api/v1', createAgreementRouter());

@@ -52,10 +52,11 @@ export function createPrismaChangeRepository(database: PrismaClient): ChangeRepo
       const row = await withTransactionRetry(() => database.$transaction(async (transaction) => {
           const member = await transaction.projectMember.findUnique({
             where: { projectId_userId: { projectId: input.projectId, userId: input.userId } },
-            include: { project: { select: { activeAgreementVersionId: true } } },
+            include: { project: { select: { activeAgreementVersionId: true, status: true } } },
           });
           if (!member) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Proyek tidak ditemukan');
           if (member.role !== ProjectRole.CLIENT) throw new AppError(403, 'FORBIDDEN', 'Hanya klien yang dapat meminta perubahan');
+          if (member.project.status !== 'ACTIVE') throw new AppError(409, 'PROJECT_STATE_CONFLICT', 'Perubahan hanya tersedia untuk proyek aktif');
           if (!member.project.activeAgreementVersionId) throw new AppError(409, 'AGREEMENT_REQUIRED', 'Proyek belum memiliki kesepakatan aktif');
           if (member.project.activeAgreementVersionId !== input.expectedActiveVersionId) {
             throw new AppError(409, 'VERSION_CONFLICT', 'Versi kesepakatan aktif telah berubah');

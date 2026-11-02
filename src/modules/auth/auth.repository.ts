@@ -1,3 +1,4 @@
+import type { ConsentInput } from './policies';
 import type { PrismaClient, User } from '../../generated/prisma/client';
 
 export type AuthUserRecord = Pick<
@@ -9,7 +10,7 @@ export type AuthUserRecord = Pick<
   | 'passwordHash'
   | 'emailVerifiedAt'
   | 'createdAt'
->;
+> & { consents?: { termsVersion: string; privacyVersion: string }[] };
 
 export type NewSession = {
   id: string;
@@ -25,6 +26,7 @@ export interface AuthRepository {
     email: string;
     role: User['role'];
     passwordHash: string;
+    consent: ConsentInput;
     session: NewSession;
   }): Promise<AuthUserRecord>;
   createSession(userId: string, session: NewSession): Promise<void>;
@@ -38,7 +40,7 @@ export interface AuthRepository {
 export function createPrismaAuthRepository(database: PrismaClient): AuthRepository {
   return {
     findUserByEmail(email) {
-      return database.user.findUnique({ where: { email } });
+      return database.user.findUnique({ where: { email }, include: { consents: { select: { termsVersion: true, privacyVersion: true } } } });
     },
 
     createUserWithSession(input) {
@@ -49,6 +51,7 @@ export function createPrismaAuthRepository(database: PrismaClient): AuthReposito
             email: input.email,
             role: input.role,
             passwordHash: input.passwordHash,
+            consents: { create: { ...input.consent, birthDate: new Date(`${input.consent.birthDate}T00:00:00.000Z`) } },
           },
         });
 
@@ -59,7 +62,7 @@ export function createPrismaAuthRepository(database: PrismaClient): AuthReposito
           },
         });
 
-        return user;
+        return { ...user, consents: [input.consent] };
       });
     },
 
@@ -81,7 +84,7 @@ export function createPrismaAuthRepository(database: PrismaClient): AuthReposito
             id: true,
             userId: true,
             tokenFamilyId: true,
-            user: true,
+            user: { include: { consents: { select: { termsVersion: true, privacyVersion: true } } } },
           },
         });
         if (!current) return null;
@@ -99,6 +102,7 @@ export function createPrismaAuthRepository(database: PrismaClient): AuthReposito
             userId: current.userId,
           },
         });
+        await transaction.pushDevice.updateMany({ where: { sessionId: current.id, userId: current.userId, enabled: true }, data: { sessionId: input.nextSession.id } });
         return current.user;
       });
     },
